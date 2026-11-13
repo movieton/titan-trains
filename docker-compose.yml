@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  titan-trains:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: titan-trains
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3900:80"
+    environment:
+      - NODE_ENV=production
