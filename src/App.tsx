@@ -7,22 +7,18 @@ import {
   UserState,
   ActiveWorkoutBackup,
   DailyBreakSlot,
-  MixGoal,
-  MixStructure,
 } from './types/fitness';
 import { EXERCISES_DB, KETTLEBELL_COMPLEXES_DB, KettlebellComplex } from './data/exercises';
 import {
   generateBreakWorkout,
   generateKettlebellWorkout,
   generateMorningWorkout,
-  generateWalkingWorkout,
-  generateHybridMixWorkout,
-  calculateWalkingMetrics,
   getDefaultBreakSlots,
   getTodayISO,
   KETTLEBELL_WEEKLY_SCHEDULE,
 } from './utils/workoutBuilder';
 import { MotivationScalesPanel } from './components/MotivationScalesPanel';
+import { WalkingTabPanel } from './components/WalkingTabPanel';
 import { ExerciseDetailCard } from './components/ExerciseDetailCard';
 import { ActiveWorkoutModal } from './components/ActiveWorkoutModal';
 import { AccountAndSettingsModal } from './components/AccountAndSettingsModal';
@@ -309,54 +305,6 @@ export function App() {
     () => generateKettlebellWorkout(userState.selectedKettlebellProgram),
     [userState.selectedKettlebellProgram]
   );
-
-  // Walking Pad & Smart Mixer States
-  const [selectedWalkingProtocol, setSelectedWalkingProtocol] = useState<'zone2' | 'intervals' | 'after_meal' | 'recovery'>('zone2');
-  const [selectedWalkingDuration, setSelectedWalkingDuration] = useState<15 | 20 | 30 | 45>(20);
-
-  const [mixGoal, setMixGoal] = useState<MixGoal>('fatburn');
-  const [mixStructure, setMixStructure] = useState<MixStructure>('walk_then_kb');
-  const [mixDuration, setMixDuration] = useState<25 | 35 | 45>(35);
-  const [mixIncludeBands, setMixIncludeBands] = useState<boolean>(true);
-  const [mixIncludeKettlebells, setMixIncludeKettlebells] = useState<boolean>(true);
-
-  // Walking & Hybrid Plans
-  const walkingPlan = useMemo(
-    () => generateWalkingWorkout(selectedWalkingProtocol, selectedWalkingDuration, userState.profile.currentWeightKg),
-    [selectedWalkingProtocol, selectedWalkingDuration, userState.profile.currentWeightKg]
-  );
-
-  const hybridPlan = useMemo(
-    () => generateHybridMixWorkout({
-      goal: mixGoal,
-      structure: mixStructure,
-      totalMinutes: mixDuration,
-      includeBands: mixIncludeBands,
-      userWeightKg: userState.profile.currentWeightKg,
-    }),
-    [mixGoal, mixStructure, mixDuration, mixIncludeBands, userState.profile.currentWeightKg]
-  );
-
-  const handleAutoRecommendMix = () => {
-    const day = new Date().getDay();
-    if (day === 2 || day === 4 || day === 0) {
-      setMixGoal('recovery');
-      setMixStructure('walking_only');
-      setMixDuration(25);
-      setReminderBanner('✨ Рекомендация на день восстановления: мягкое кардио на дорожке в Зоне 2.');
-    } else if (day === 1 || day === 5) {
-      setMixGoal('strength_cardio');
-      setMixStructure('walk_then_kb');
-      setMixDuration(35);
-      setReminderBanner('✨ Рекомендация на силовой день: Разогрев на дорожке ➔ Силовой блок с гирями.');
-    } else {
-      setMixGoal('fatburn');
-      setMixStructure('kb_then_walk');
-      setMixDuration(35);
-      setReminderBanner('✨ Рекомендация на жиросжигающий день: Гири/махи ➔ Кардио-финишер на дорожке.');
-    }
-    soundEngine.playStartBell();
-  };
 
   // Filtered Library Exercises for current tab
   const filteredLibraryExercises = useMemo(() => {
@@ -1044,358 +992,19 @@ export function App() {
 
             {/* CATEGORY C: WALKING PAD & SMART HYBRID MIXER */}
             {activeCategory === 'walking' && (
-              <div className="space-y-6">
-                {/* BLOCK 1: FAST START WALKING PROTOCOLS */}
-                <div className="p-5 rounded-3xl bg-slate-900/90 border border-emerald-500/30 space-y-4 shadow-xl">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
-                        <Footprints className="w-4 h-4" />
-                        Блок 1: Протоколы ходьбы на Walking Pad
-                      </span>
-                      <h3 className="text-xl font-black text-white mt-0.5">
-                        Аэробная база без ударной нагрузки на суставы
-                      </h3>
-                      <p className="text-xs text-slate-300 mt-0.5">
-                        Вес {userState.profile.currentWeightKg} кг: ходьба 5.0–5.6 км/ч сжигает свободные жирные кислоты и защищает диски L4-S1.
-                      </p>
-                    </div>
-
-                    {/* Duration Selector: 15 / 20 / 30 / 45 min */}
-                    <div className="flex items-center gap-1.5 bg-slate-950 p-1.5 rounded-2xl border border-slate-800 self-start">
-                      {([15, 20, 30, 45] as const).map((m) => (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => setSelectedWalkingDuration(m)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer ${
-                            selectedWalkingDuration === m
-                              ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                              : 'text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          {m} мин
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 4 Protocol Cards Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {[
-                      {
-                        id: 'zone2' as const,
-                        title: '1. Жиросжигание в Зоне 2',
-                        speed: '5.0 – 5.6 км/ч',
-                        badge: '🔥 Макс. окисление жиров',
-                        desc: 'Разговорный темп (ЧСС 110–125 уд). Идеально для утилизации висцерального жира без кортизола.',
-                      },
-                      {
-                        id: 'intervals' as const,
-                        title: '2. Спортивный темповый шаг',
-                        speed: '5.8 – 6.4 км/ч',
-                        badge: '⚡ Кардио-интервалы',
-                        desc: 'Чередование ускорений 6.0 км/ч с ЗCross-training темпом. Разгон VO2 Max и метаболизма на 24 часа.',
-                      },
-                      {
-                        id: 'after_meal' as const,
-                        title: '3. Сахарный насос после еды',
-                        speed: '4.8 – 5.3 км/ч',
-                        badge: '🩸 GLUT-4 утилизация',
-                        desc: 'Включение камбаловидной мышцы (Soleus) через 20 мин после еды: снижает пик глюкозы на 35%.',
-                      },
-                      {
-                        id: 'recovery' as const,
-                        title: '4. Восстановление спины',
-                        speed: '3.5 – 4.5 км/ч',
-                        badge: '🛡 Декомпрессия дисков',
-                        desc: 'Мягкий разгрузочный шаг для дней отдыха. Снимает отек и венозный застой после рабочего дня.',
-                      },
-                    ].map((proto) => {
-                      const isSel = selectedWalkingProtocol === proto.id;
-                      const dummyPlan = generateWalkingWorkout(proto.id, selectedWalkingDuration, userState.profile.currentWeightKg);
-                      return (
-                        <div
-                          key={proto.id}
-                          onClick={() => setSelectedWalkingProtocol(proto.id)}
-                          className={`p-4 rounded-2xl border transition cursor-pointer space-y-2.5 ${
-                            isSel
-                              ? 'bg-emerald-950/30 border-emerald-500/60 shadow-lg shadow-emerald-500/10'
-                              : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-black text-white">{proto.title}</span>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
-                              {proto.speed}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-300 leading-snug">{proto.desc}</p>
-                          <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[11px] text-slate-400">
-                            <span>🚶 ~{dummyPlan.walkingStats?.estimatedSteps} шагов</span>
-                            <span>📏 ~{dummyPlan.walkingStats?.estimatedDistanceKm} км</span>
-                            <span className="font-bold text-amber-400">~{dummyPlan.estimatedKcal} ккал</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Start Walking Button */}
-                  <div className="pt-2 border-t border-slate-800 flex items-center justify-between flex-wrap gap-3">
-                    <div className="flex items-center gap-3 text-xs text-slate-300">
-                      <span>Итог: <strong>{walkingPlan.estimatedMinutes} мин</strong></span>
-                      <span>•</span>
-                      <span>Шаги: <strong className="text-emerald-400">{walkingPlan.walkingStats?.estimatedSteps}</strong></span>
-                      <span>•</span>
-                      <span>Дистанция: <strong className="text-cyan-400">{walkingPlan.walkingStats?.estimatedDistanceKm} км</strong></span>
-                      <span>•</span>
-                      <span>Расход: <strong className="text-amber-400">~{walkingPlan.estimatedKcal} ккал</strong></span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setActiveSession({
-                          title: walkingPlan.title,
-                          category: 'walking',
-                          exercises: walkingPlan.exercises,
-                        })
-                      }
-                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm shadow-xl shadow-emerald-500/20 transition cursor-pointer"
-                    >
-                      <Play className="w-4 h-4 fill-current" />
-                      <span>Запустить Протокол на Дорожке ({walkingPlan.estimatedMinutes} мин)</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* BLOCK 2: SMART WORKOUT MIXER */}
-                <div className="p-5 rounded-3xl bg-slate-900/90 border border-teal-500/30 space-y-4 shadow-xl">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <span className="text-xs font-extrabold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
-                        <Sparkles className="w-4 h-4" />
-                        Блок 2: Умный Микшер «Дорожка + Гири / Резинки»
-                      </span>
-                      <h3 className="text-xl font-black text-white mt-0.5">
-                        Конструктор гибридных кардио-силовых тренировок
-                      </h3>
-                      <p className="text-xs text-slate-300 mt-0.5">
-                        Совмещайте аэробную работу на дорожке с силовым фундаментом под текущий день и цели.
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleAutoRecommendMix}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-500/20 hover:bg-teal-500/30 border border-teal-500/40 text-teal-300 text-xs font-black transition cursor-pointer self-start"
-                      title="Автоматический подбор оптимального микса под день недели и вес 110 кг"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-teal-400" />
-                      <span>✨ Подобрать под день недели и вес</span>
-                    </button>
-                  </div>
-
-                  {/* 1. Goal Selector */}
-                  <div className="space-y-1.5">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                      1. Цель тренировки на сегодня:
-                    </span>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {[
-                        { id: 'fatburn' as const, label: '🔥 Жиросжигание' },
-                        { id: 'strength_cardio' as const, label: '💪 Сила + Кардио' },
-                        { id: 'recovery' as const, label: '🛡 Восстановление' },
-                        { id: 'glucose_control' as const, label: '🩸 Контроль сахара' },
-                      ].map((g) => (
-                        <button
-                          key={g.id}
-                          type="button"
-                          onClick={() => setMixGoal(g.id)}
-                          className={`py-2 px-3 rounded-xl text-xs font-extrabold transition cursor-pointer border ${
-                            mixGoal === g.id
-                              ? 'bg-teal-500 text-slate-950 border-teal-400 shadow-md shadow-teal-500/20'
-                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
-                          }`}
-                        >
-                          {g.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 2. Structure Selector */}
-                  <div className="space-y-1.5">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                      2. Структура занятия:
-                    </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {[
-                        {
-                          id: 'walk_then_kb' as const,
-                          label: '🚶➔🏋️ Ходьба ➔ Сила с гирями',
-                          hint: '12 мин разогрева на дорожке + силовой блок (Присед, Тяга, Жим)',
-                        },
-                        {
-                          id: 'kb_then_walk' as const,
-                          label: '🏋️➔🚶 Гири ➔ Кардио-финишер',
-                          hint: 'Мобилизация жирных кислот махами 16 кг ➔ 15 мин ходьбы в Зоне 2',
-                        },
-                        {
-                          id: 'circuit_5_2' as const,
-                          label: '🔄 Круговой микс 4+1 (Без скуки)',
-                          hint: 'Раунды: 4 мин бодрый шаг ➔ 1 упражнение с гирей/резинкой (3-4 круга)',
-                        },
-                        {
-                          id: 'walking_only' as const,
-                          label: '🚶 Только дорожка для ходьбы',
-                          hint: 'Чистая непрерывная кардио-сессия без отягощений в Зоне 2',
-                        },
-                      ].map((st) => (
-                        <button
-                          key={st.id}
-                          type="button"
-                          onClick={() => setMixStructure(st.id)}
-                          className={`p-3 rounded-xl text-left border transition cursor-pointer space-y-0.5 ${
-                            mixStructure === st.id
-                              ? 'bg-teal-950/40 border-teal-500/70 shadow-md shadow-teal-500/10'
-                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
-                          }`}
-                        >
-                          <div className={`text-xs font-black ${mixStructure === st.id ? 'text-teal-300' : 'text-slate-300'}`}>
-                            {st.label}
-                          </div>
-                          <div className="text-[11px] text-slate-400">{st.hint}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 3. Duration & Equipment */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-bold text-slate-400 uppercase">Общее время:</span>
-                      <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
-                        {([25, 35, 45] as const).map((dur) => (
-                          <button
-                            key={dur}
-                            type="button"
-                            onClick={() => setMixDuration(dur)}
-                            className={`px-3 py-1 rounded-lg text-xs font-extrabold transition cursor-pointer ${
-                              mixDuration === dur
-                                ? 'bg-teal-500 text-slate-950'
-                                : 'text-slate-400 hover:text-white'
-                            }`}
-                          >
-                            {dur} мин
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 text-xs">
-                      <label className="flex items-center gap-1.5 cursor-pointer text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={mixIncludeKettlebells}
-                          onChange={(e) => setMixIncludeKettlebells(e.target.checked)}
-                          className="w-4 h-4 rounded text-teal-500 bg-slate-950 border-slate-700"
-                        />
-                        <span>Гири 16/24 кг</span>
-                      </label>
-                      <label className="flex items-center gap-1.5 cursor-pointer text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={mixIncludeBands}
-                          onChange={(e) => setMixIncludeBands(e.target.checked)}
-                          className="w-4 h-4 rounded text-teal-500 bg-slate-950 border-slate-700"
-                        />
-                        <span>Фитнес-резинки</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Hybrid Plan Preview & Launch Button */}
-                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div>
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-teal-400">
-                          {hybridPlan.walkingStats?.protocolBadge || 'Гибридный микс'}
-                        </span>
-                        <h4 className="text-base font-black text-white">{hybridPlan.title}</h4>
-                        <p className="text-xs text-slate-300 mt-0.5">{hybridPlan.coachFocus}</p>
-                      </div>
-
-                      <div className="flex items-center gap-3 text-xs text-slate-300 shrink-0">
-                        {hybridPlan.walkingStats?.estimatedSteps ? (
-                          <span className="font-bold text-emerald-400">🚶 {hybridPlan.walkingStats.estimatedSteps} шагов</span>
-                        ) : null}
-                        <span className="font-bold text-amber-400">🔥 ~{hybridPlan.estimatedKcal} ккал</span>
-                      </div>
-                    </div>
-
-                    {/* Exercise Chain Preview Chips */}
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {hybridPlan.exercises.map((ex, idx) => (
-                        <span
-                          key={`${ex.id}-${idx}`}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-300"
-                        >
-                          <span className="text-teal-400 font-bold">{idx + 1}.</span>
-                          <span className="truncate max-w-[150px] sm:max-w-xs">{ex.titleRu}</span>
-                          <span className="text-slate-500 font-mono">({ex.defaultSeconds}с)</span>
-                        </span>
-                      ))}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setActiveSession({
-                          title: hybridPlan.title,
-                          category: 'walking',
-                          exercises: hybridPlan.exercises,
-                        })
-                      }
-                      className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-teal-400 to-emerald-400 hover:from-teal-300 hover:to-emerald-300 text-slate-950 font-black text-sm shadow-xl shadow-teal-500/20 flex items-center justify-center gap-2 cursor-pointer transition"
-                    >
-                      <Play className="w-4 h-4 fill-current" />
-                      <span>Начать гибридную тренировку ({hybridPlan.estimatedMinutes} мин)</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Exercise detail cards for walking protocols */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 px-1">
-                    Биомеханика шага и разминка протоколов:
-                  </h4>
-                  {walkingPlan.exercises.map((ex, idx) => (
-                    <ExerciseDetailCard
-                      key={`${ex.id}-${idx}`}
-                      exercise={ex}
-                      index={idx}
-                      isFavorite={userState.favoriteExerciseIds.includes(ex.id)}
-                      onStartSingleExercise={(single) =>
-                        setActiveSession({
-                          title: single.titleRu,
-                          category: 'walking',
-                          exercises: [single],
-                        })
-                      }
-                      onToggleFavorite={(id) =>
-                        setUserState((prev) => ({
-                          ...prev,
-                          favoriteExerciseIds: prev.favoriteExerciseIds.includes(id)
-                            ? prev.favoriteExerciseIds.filter((f) => f !== id)
-                            : [...prev.favoriteExerciseIds, id],
-                        }))
-                      }
-                    />
-                  ))}
-                </div>
-              </div>
+              <WalkingTabPanel
+                userWeightKg={userState.profile.currentWeightKg}
+                onStartWorkout={(session) => {
+                  setActiveSession({
+                    title: session.title,
+                    category: session.category,
+                    exercises: session.exercises,
+                  });
+                }}
+                onShowBanner={(msg) => {
+                  setReminderBanner(msg);
+                }}
+              />
             )}
 
             {/* CATEGORY D: KETTLEBELLS (16kg / 24kg), BANDS & CALISTHENICS */}

@@ -118,8 +118,16 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
   });
   const [backComfort, setBackComfort] = useState<'great' | 'normal' | 'tired'>('great');
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
-  const [selectedWalkingSpeed, setSelectedWalkingSpeed] = useState<number>(5.0);
-  const [accumulatedWalkingSteps, setAccumulatedWalkingSteps] = useState(0);
+  const [selectedWalkingSpeed, setSelectedWalkingSpeed] = useState<number>(() => initialBackup?.selectedWalkingSpeed ?? 5.0);
+  const [accumulatedWalkingSteps, setAccumulatedWalkingSteps] = useState<number>(() => initialBackup?.accumulatedWalkingSteps ?? 0);
+  const [accumulatedWalkingKcal, setAccumulatedWalkingKcal] = useState<number>(() => initialBackup?.accumulatedWalkingKcal ?? 0);
+  const [segmentStartElapsed, setSegmentStartElapsed] = useState<number>(0);
+
+  const safeWeightKg = useMemo(() => {
+    return typeof userWeightKg === 'number' && !isNaN(userWeightKg) && userWeightKg >= 30 && userWeightKg <= 300
+      ? userWeightKg
+      : 110;
+  }, [userWeightKg]);
 
   const currentExercise = exercises[currentIndex];
   const nextExercise = exercises[currentIndex + 1];
@@ -228,13 +236,14 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
   const isWalkingExercise = currentExercise?.category === 'walking';
 
   useEffect(() => {
+    setSegmentStartElapsed(0);
     if (currentExercise?.targetSpeedKmh) {
       const match = currentExercise.targetSpeedKmh.match(/(\d+(?:\.\d+)?)/);
       if (match) {
         setSelectedWalkingSpeed(parseFloat(match[1]));
       }
     }
-  }, [currentExercise]);
+  }, [currentIndex]);
 
   const walkingCadence = useMemo(() => {
     if (selectedWalkingSpeed >= 6.0) return 134;
@@ -244,23 +253,6 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     return 105;
   }, [selectedWalkingSpeed]);
 
-  const currentWalkElapsed = useMemo(() => {
-    if (!isWalkingExercise || !currentExercise) return 0;
-    return Math.max(0, currentExercise.defaultSeconds - timer.secondsLeft);
-  }, [isWalkingExercise, currentExercise, timer.secondsLeft]);
-
-  const liveWalkingSteps = useMemo(() => {
-    return Math.round((currentWalkElapsed / 60) * walkingCadence);
-  }, [currentWalkElapsed, walkingCadence]);
-
-  const totalCalculatedSteps = useMemo(() => {
-    return accumulatedWalkingSteps + liveWalkingSteps;
-  }, [accumulatedWalkingSteps, liveWalkingSteps]);
-
-  const totalCalculatedDistanceKm = useMemo(() => {
-    return Math.round(((totalCalculatedSteps * 0.72) / 1000) * 100) / 100;
-  }, [totalCalculatedSteps]);
-
   const liveWalkingMet = useMemo(() => {
     if (selectedWalkingSpeed >= 6.0) return 5.2;
     if (selectedWalkingSpeed >= 5.5) return 4.6;
@@ -269,9 +261,35 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     return 3.0;
   }, [selectedWalkingSpeed]);
 
-  const liveWalkingKcal = useMemo(() => {
-    return Math.round(liveWalkingMet * userWeightKg * (currentWalkElapsed / 3600));
-  }, [liveWalkingMet, userWeightKg, currentWalkElapsed]);
+  const currentWalkElapsed = useMemo(() => {
+    if (!isWalkingExercise || !currentExercise) return 0;
+    return Math.max(0, currentExercise.defaultSeconds - timer.secondsLeft);
+  }, [isWalkingExercise, currentExercise, timer.secondsLeft]);
+
+  // Integral speed step accumulation
+  const liveSegmentElapsed = Math.max(0, currentWalkElapsed - segmentStartElapsed);
+  const liveSegmentSteps = Math.round((liveSegmentElapsed / 60) * walkingCadence);
+  const liveSegmentKcal = Math.round(liveWalkingMet * safeWeightKg * (liveSegmentElapsed / 3600));
+
+  const totalCalculatedSteps = accumulatedWalkingSteps + liveSegmentSteps;
+  const totalCalculatedKcal = accumulatedWalkingKcal + liveSegmentKcal;
+  const totalCalculatedDistanceKm = Math.round(((totalCalculatedSteps * 0.72) / 1000) * 100) / 100;
+
+  const changeWalkingSpeed = useCallback(
+    (newSpeed: number) => {
+      const clamped = Math.min(6.5, Math.max(3.5, Math.round(newSpeed * 10) / 10));
+      if (clamped === selectedWalkingSpeed) return;
+      const segElapsed = Math.max(0, currentWalkElapsed - segmentStartElapsed);
+      const segSteps = Math.round((segElapsed / 60) * walkingCadence);
+      const segKcal = Math.round(liveWalkingMet * safeWeightKg * (segElapsed / 3600));
+
+      setAccumulatedWalkingSteps((prev) => prev + segSteps);
+      setAccumulatedWalkingKcal((prev) => prev + segKcal);
+      setSegmentStartElapsed(currentWalkElapsed);
+      setSelectedWalkingSpeed(clamped);
+    },
+    [selectedWalkingSpeed, currentWalkElapsed, segmentStartElapsed, walkingCadence, liveWalkingMet, safeWeightKg]
+  );
 
   // Restore initial backup if provided
   useEffect(() => {
@@ -323,6 +341,9 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
       elapsedTotalSeconds: timer.elapsedTotalSeconds,
       completedCount,
       repCounter,
+      selectedWalkingSpeed,
+      accumulatedWalkingSteps: totalCalculatedSteps,
+      accumulatedWalkingKcal: totalCalculatedKcal,
       timestamp: Date.now(),
     };
 
@@ -344,12 +365,17 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     timer.elapsedTotalSeconds,
     completedCount,
     repCounter,
+    selectedWalkingSpeed,
+    totalCalculatedSteps,
+    totalCalculatedKcal,
   ]);
 
   // Start next exercise in active work
   const startNextExerciseWork = useCallback(() => {
     if (isWalkingExercise) {
-      setAccumulatedWalkingSteps((prev) => prev + liveWalkingSteps);
+      setAccumulatedWalkingSteps((prev) => prev + liveSegmentSteps);
+      setAccumulatedWalkingKcal((prev) => prev + liveSegmentKcal);
+      setSegmentStartElapsed(0);
     }
     if (currentIndex + 1 < exercises.length) {
       const nextIdx = currentIndex + 1;
@@ -379,7 +405,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     } else {
       finishWorkout();
     }
-  }, [currentIndex, exercises, soundEnabled, timer, isWalkingExercise, liveWalkingSteps]);
+  }, [currentIndex, exercises, soundEnabled, timer, isWalkingExercise, liveSegmentSteps, liveSegmentKcal]);
 
   // User starts workout on exercise 1
   const handleStartWork = useCallback(() => {
@@ -713,6 +739,31 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
             </div>
           </div>
 
+          {/* Station Transition Safety Alert */}
+          {phase === 'transition_next' && currentExercise?.category === 'walking' && nextExercise?.category !== 'walking' && (
+            <div className="w-full rounded-3xl bg-amber-950/70 border-2 border-amber-500/80 p-4 space-y-1.5 shadow-xl text-left animate-fadeIn">
+              <div className="flex items-center gap-2 text-amber-300 font-black text-xs uppercase tracking-wide">
+                <span className="text-base">🛑</span>
+                <span>Безопасная смена станции: Плавно остановите дорожку</span>
+              </div>
+              <p className="text-xs text-amber-100/90 leading-relaxed font-semibold">
+                Нажмите «Стоп» на пульте Walking Pad, дождитесь полной остановки полотна и спокойно сойдите на коврик к снаряду.
+              </p>
+            </div>
+          )}
+
+          {phase === 'transition_next' && currentExercise?.category !== 'walking' && nextExercise?.category === 'walking' && (
+            <div className="w-full rounded-3xl bg-emerald-950/70 border-2 border-emerald-500/80 p-4 space-y-1.5 shadow-xl text-left animate-fadeIn">
+              <div className="flex items-center gap-2 text-emerald-300 font-black text-xs uppercase tracking-wide">
+                <span className="text-base">🚶</span>
+                <span>Переход на дорожку Walking Pad</span>
+              </div>
+              <p className="text-xs text-emerald-100/90 leading-relaxed font-semibold">
+                Поставьте гирю на устойчивую поверхность, встаньте на полотно дорожки и включите стартовую скорость 4.0–4.5 км/ч.
+              </p>
+            </div>
+          )}
+
           {/* Preview for next exercise during transition_next */}
           {phase === 'transition_next' && nextExercise && (
             <div className="w-full rounded-3xl bg-slate-900/90 border border-slate-800 p-4 sm:p-5 space-y-3.5 shadow-lg">
@@ -960,51 +1011,78 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
 
                 {/* Walking Pad Speed Selector & Real-Time Stats */}
                 {isWalkingExercise && (
-                  <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-emerald-500/40 space-y-2.5 text-left">
+                  <div className="p-3.5 sm:p-4 rounded-3xl bg-slate-950/95 border border-emerald-500/40 space-y-3 text-left shadow-2xl">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-extrabold text-emerald-400 flex items-center gap-1.5">
-                        <span>🚶</span>
-                        <span>Скорость дорожки: {selectedWalkingSpeed.toFixed(1)} км/ч</span>
+                      <span className="font-black text-emerald-400 flex items-center gap-1.5">
+                        <span className="text-base">🚶</span>
+                        <span>Скорость полотна: {selectedWalkingSpeed.toFixed(1)} км/ч</span>
                       </span>
-                      <span className="text-[11px] text-slate-400">
-                        {currentExercise.targetSpeedKmh ? `Цель: ${currentExercise.targetSpeedKmh}` : 'Зона 2'}
+                      <span className="text-[11px] text-slate-400 font-bold">
+                        {currentExercise.targetSpeedKmh ? `План: ${currentExercise.targetSpeedKmh}` : 'Зона 2'}
                       </span>
                     </div>
 
-                    {/* Interactive Speed Selector */}
-                    <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-                      {[4.0, 4.5, 5.0, 5.5, 6.0].map((spd) => (
-                        <button
-                          key={spd}
-                          type="button"
-                          onClick={() => setSelectedWalkingSpeed(spd)}
-                          className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-black transition cursor-pointer ${
-                            selectedWalkingSpeed === spd
-                              ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25 scale-105'
-                              : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
-                          }`}
-                        >
-                          {spd.toFixed(1)}
-                        </button>
-                      ))}
-                      <span className="text-[10px] text-slate-500 font-bold shrink-0">км/ч</span>
+                    {/* Ergonomic Steppers + Quick Preset Chips (Thumb Zone friendly) */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => changeWalkingSpeed(selectedWalkingSpeed - 0.5)}
+                        className="h-11 px-3 rounded-2xl bg-slate-900 border border-slate-700 text-slate-200 font-black text-xs sm:text-sm active:scale-95 transition flex items-center justify-center shrink-0 cursor-pointer hover:bg-slate-800"
+                        aria-label="Уменьшить скорость на 0.5 км/ч"
+                      >
+                        – 0.5
+                      </button>
+
+                      <div className="flex-1 grid grid-cols-5 gap-1.5">
+                        {[4.0, 4.5, 5.0, 5.5, 6.0].map((spd) => (
+                          <button
+                            key={spd}
+                            type="button"
+                            onClick={() => changeWalkingSpeed(spd)}
+                            className={`h-11 rounded-2xl text-xs font-black transition cursor-pointer flex items-center justify-center ${
+                              Math.abs(selectedWalkingSpeed - spd) < 0.05
+                                ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/30 font-black scale-102'
+                                : 'bg-slate-900/90 text-slate-400 border border-slate-800 hover:text-white'
+                            }`}
+                          >
+                            {spd.toFixed(1)}
+                          </button>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => changeWalkingSpeed(selectedWalkingSpeed + 0.5)}
+                        className="h-11 px-3 rounded-2xl bg-slate-900 border border-slate-700 text-slate-200 font-black text-xs sm:text-sm active:scale-95 transition flex items-center justify-center shrink-0 cursor-pointer hover:bg-slate-800"
+                        aria-label="Увеличить скорость на 0.5 км/ч"
+                      >
+                        + 0.5
+                      </button>
                     </div>
+
+                    {/* Speed Safety Cue if >= 5.8 km/h */}
+                    {selectedWalkingSpeed >= 5.8 && (
+                      <div className="p-2 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center gap-2 text-[11px] text-amber-300 font-bold">
+                        <span>⚠️</span>
+                        <span>Высокая скорость для компактной дорожки: контролируйте шаг и держите центр полотна!</span>
+                      </div>
+                    )}
 
                     {/* Live Walking Metrics Grid */}
                     <div className="grid grid-cols-4 gap-1.5 pt-1 border-t border-slate-800/80 text-center">
-                      <div className="p-1.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                      <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800">
                         <div className="text-[9px] text-slate-400 uppercase font-bold">Шаги</div>
                         <div className="text-sm font-black text-white">{totalCalculatedSteps}</div>
                       </div>
-                      <div className="p-1.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                      <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800">
                         <div className="text-[9px] text-slate-400 uppercase font-bold">Дистанция</div>
                         <div className="text-sm font-black text-emerald-400">{totalCalculatedDistanceKm} км</div>
                       </div>
-                      <div className="p-1.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                      <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800">
                         <div className="text-[9px] text-slate-400 uppercase font-bold">Расход</div>
-                        <div className="text-sm font-black text-amber-400">~{liveWalkingKcal} ккал</div>
+                        <div className="text-sm font-black text-amber-400">~{totalCalculatedKcal} ккал</div>
                       </div>
-                      <div className="p-1.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                      <div className="p-2 rounded-xl bg-slate-900/80 border border-slate-800">
                         <div className="text-[9px] text-slate-400 uppercase font-bold">Каденс</div>
                         <div className="text-sm font-black text-cyan-400">{walkingCadence} /м</div>
                       </div>
