@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Exercise } from '../types/fitness';
+import { Exercise, getCleanQuickSteps } from '../types/fitness';
 import { BiomechanicalVisualizer } from './BiomechanicalVisualizer';
 import {
   Play,
@@ -104,19 +104,15 @@ export const ExerciseDetailCard: React.FC<ExerciseDetailCardProps> = ({
           <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-400 block">
             Суть движения:
           </span>
-          <div className="space-y-1 text-xs text-slate-200">
-            {exercise.steps.slice(0, 3).map((s, i) => {
-              const clean = s.replace(/^(Шаг|Фаза)\s*\d+[:.-]\s*/i, '').trim();
-              const firstSentence = clean.split(/[.!?]/)[0].trim();
-              return (
-                <div key={i} className="flex items-start gap-2">
-                  <span className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
-                    {i + 1}
-                  </span>
-                  <span className="leading-snug">{firstSentence}</span>
-                </div>
-              );
-            })}
+          <div className="space-y-1.5 text-xs sm:text-sm text-slate-200">
+            {getCleanQuickSteps(exercise).map((step, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                  {i + 1}
+                </span>
+                <span className="leading-snug">{step}</span>
+              </div>
+            ))}
           </div>
         </div>
 

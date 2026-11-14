@@ -1,4 +1,4 @@
-const CACHE_NAME = 'titan-fitness-v3';
+const CACHE_NAME = 'titan-fitness-v4';
 
 self.addEventListener('install', () => {
   self.skipWaiting();

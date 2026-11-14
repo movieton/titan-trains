@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { Exercise, ExerciseCategory, ActiveWorkoutBackup, isExerciseBilateral } from '../types/fitness';
+import { Exercise, ExerciseCategory, ActiveWorkoutBackup, isExerciseBilateral, getCleanQuickSteps } from '../types/fitness';
 import { BiomechanicalVisualizer } from './BiomechanicalVisualizer';
 import { useWorkoutTimer } from '../hooks/useWorkoutTimer';
 import { soundEngine } from '../utils/soundEngine';
@@ -25,6 +25,8 @@ import {
   Dumbbell,
   Info,
   Check,
+  Zap,
+  ArrowLeft,
 } from 'lucide-react';
 
 interface ActiveWorkoutModalProps {
@@ -48,21 +50,9 @@ interface ActiveWorkoutModalProps {
   }) => void;
 }
 
-type WorkoutPhase = 'ready' | 'work' | 'rest_set' | 'transition_next' | 'finished';
+type WorkoutPhase = 'ready' | 'prep_countdown' | 'work' | 'rest_set' | 'transition_next' | 'finished';
 
 const ACTIVE_BACKUP_STORAGE_KEY = 'titan_active_workout_backup';
-
-// Extract max 2-3 ultra-short action bullets (up to 45 chars each)
-function getCleanQuickSteps(exercise: Exercise): string[] {
-  if (exercise.quickSteps && exercise.quickSteps.length > 0) {
-    return exercise.quickSteps.slice(0, 3).map((s) => (s.length > 50 ? s.slice(0, 47) + '...' : s));
-  }
-  return exercise.steps.slice(0, 3).map((step) => {
-    const clean = step.replace(/^(Шаг|Фаза)\s*\d+[:.-]\s*/i, '').trim();
-    const firstSentence = clean.split(/[.!?]/)[0].trim();
-    return firstSentence.length > 48 ? firstSentence.slice(0, 45) + '...' : firstSentence;
-  });
-}
 
 function getQuickTags(exercise: Exercise): { label: string; icon: string }[] {
   if (exercise.quickTags && exercise.quickTags.length > 0) {
@@ -105,10 +95,13 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
   onClose,
   onCompleteSession,
 }) => {
-  // Restore or default states
+  // Restore or default states (if interrupted during 3-2-1 prep countdown, safely return to ready screen)
   const [currentIndex, setCurrentIndex] = useState<number>(() => initialBackup?.currentIndex ?? 0);
   const [currentSet, setCurrentSet] = useState<number>(() => initialBackup?.currentSet ?? 1);
-  const [phase, setPhase] = useState<WorkoutPhase>(() => initialBackup?.phase ?? 'ready');
+  const [phase, setPhase] = useState<WorkoutPhase>(() =>
+    initialBackup?.phase && initialBackup.phase !== 'prep_countdown' ? initialBackup.phase : 'ready'
+  );
+  const [prepSecondsLeft, setPrepSecondsLeft] = useState<number>(3);
   const [completedCount, setCompletedCount] = useState<number>(() => initialBackup?.completedCount ?? 0);
   const [repCounter, setRepCounter] = useState<number>(() => {
     if (initialBackup?.repCounter) return initialBackup.repCounter;
@@ -118,6 +111,9 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
   });
   const [backComfort, setBackComfort] = useState<'great' | 'normal' | 'tired'>('great');
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
+  const [autoResumeNotice, setAutoResumeNotice] = useState(false);
+  const wasRunningBeforeSheetRef = useRef(false);
+  const autoResumeNoticeTimeoutRef = useRef<number | null>(null);
   const [selectedWalkingSpeed, setSelectedWalkingSpeed] = useState<number>(() => initialBackup?.selectedWalkingSpeed ?? 5.0);
   const [accumulatedWalkingSteps, setAccumulatedWalkingSteps] = useState<number>(() => initialBackup?.accumulatedWalkingSteps ?? 0);
   const [accumulatedWalkingKcal, setAccumulatedWalkingKcal] = useState<number>(() => initialBackup?.accumulatedWalkingKcal ?? 0);
@@ -407,8 +403,9 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     }
   }, [currentIndex, exercises, soundEnabled, timer, isWalkingExercise, liveSegmentSteps, liveSegmentKcal]);
 
-  // User starts workout on exercise 1
-  const handleStartWork = useCallback(() => {
+  // User starts workout immediately (without 3-2-1 countdown)
+  const handleStartWorkImmediate = useCallback(() => {
+    soundEngine.unlockAudio();
     setPhase('work');
     if (isRepsMode) {
       timer.startStopwatch();
@@ -419,6 +416,80 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
       soundEngine.playStartBell();
     }
   }, [currentExercise, isRepsMode, soundEnabled, timer]);
+
+  const startWorkRef = useRef(handleStartWorkImmediate);
+  startWorkRef.current = handleStartWorkImmediate;
+
+  // User clicks "Я готов, поехали!" -> 3-2-1-Gong prep countdown
+  const handleStartPrepCountdown = useCallback(() => {
+    soundEngine.unlockAudio();
+    setPrepSecondsLeft(3);
+    setPhase('prep_countdown');
+    if (soundEnabled) {
+      soundEngine.playCountdownTick();
+    }
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate(50);
+      } catch {
+        // ignore
+      }
+    }
+  }, [soundEnabled]);
+
+  const handleCancelPrepCountdown = useCallback(() => {
+    setPhase('ready');
+    setPrepSecondsLeft(3);
+  }, []);
+
+  // 3-2-1 countdown effect before starting exercise 1
+  useEffect(() => {
+    if (phase !== 'prep_countdown') return;
+
+    const targetEnd = Date.now() + 3000;
+    let lastShownSecond = 3;
+
+    const intervalId = window.setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((targetEnd - Date.now()) / 1000));
+      if (remaining > 0 && remaining !== lastShownSecond) {
+        lastShownSecond = remaining;
+        setPrepSecondsLeft(remaining);
+        if (soundEnabled) {
+          soundEngine.playCountdownTick();
+        }
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          try {
+            navigator.vibrate(50);
+          } catch {
+            // ignore
+          }
+        }
+      } else if (remaining <= 0) {
+        window.clearInterval(intervalId);
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          try {
+            navigator.vibrate([120, 60, 160]);
+          } catch {
+            // ignore
+          }
+        }
+        startWorkRef.current();
+      }
+    }, 100);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [phase, soundEnabled]);
+
+  // Clean up auto-resume banner timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoResumeNoticeTimeoutRef.current) {
+        window.clearTimeout(autoResumeNoticeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Explicit completion of a Reps Set (Thumb button)
   const handleCompleteRepsSet = useCallback(() => {
@@ -468,8 +539,8 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
   const handleManualSkip = useCallback(() => {
     if (phase === 'transition_next') {
       startNextExerciseWork();
-    } else if (phase === 'ready') {
-      handleStartWork();
+    } else if (phase === 'ready' || phase === 'prep_countdown') {
+      handleStartWorkImmediate();
     } else if (phase === 'rest_set') {
       setCurrentSet((s) => s + 1);
       setPhase('work');
@@ -488,20 +559,37 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
         finishWorkout();
       }
     }
-  }, [phase, startNextExerciseWork, handleStartWork, isRepsMode, currentExercise, currentIndex, exercises.length, defaultTransitionSeconds, timer, finishWorkout]);
+  }, [phase, startNextExerciseWork, handleStartWorkImmediate, isRepsMode, currentExercise, currentIndex, exercises.length, defaultTransitionSeconds, timer, finishWorkout]);
 
-  // Open Bottom Sheet (Auto-pause if duration mode)
+  // Open Bottom Sheet (Auto-pause if timer is running and remember state)
   const handleOpenBottomSheet = () => {
-    if (phase === 'work' && !isRepsMode && timer.isRunning) {
+    wasRunningBeforeSheetRef.current = timer.isRunning;
+    if (timer.isRunning) {
       timer.pauseTimer();
     }
     setIsBottomSheetOpen(true);
   };
 
-  // Close Bottom Sheet
-  const handleCloseBottomSheet = () => {
+  // Close Bottom Sheet (Auto-resume with soft tick if timer was running before opening)
+  const handleCloseBottomSheet = useCallback(() => {
     setIsBottomSheetOpen(false);
-  };
+    if (wasRunningBeforeSheetRef.current) {
+      wasRunningBeforeSheetRef.current = false;
+      if (phase === 'work' || phase === 'rest_set' || phase === 'transition_next') {
+        timer.resumeTimer();
+        if (soundEnabled) {
+          soundEngine.playCountdownTick();
+        }
+        setAutoResumeNotice(true);
+        if (autoResumeNoticeTimeoutRef.current) {
+          window.clearTimeout(autoResumeNoticeTimeoutRef.current);
+        }
+        autoResumeNoticeTimeoutRef.current = window.setTimeout(() => {
+          setAutoResumeNotice(false);
+        }, 2500);
+      }
+    }
+  }, [phase, soundEnabled, timer]);
 
   // Keyboard shortcut listener
   useEffect(() => {
@@ -511,7 +599,9 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
       if (e.code === 'Space') {
         e.preventDefault();
         if (phase === 'ready') {
-          handleStartWork();
+          handleStartPrepCountdown();
+        } else if (phase === 'prep_countdown') {
+          handleStartWorkImmediate();
         } else if (phase === 'work') {
           if (isRepsMode) {
             handleCompleteRepsSet();
@@ -535,7 +625,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [phase, isRepsMode, isBottomSheetOpen, handleStartWork, handleCompleteRepsSet, timer, startNextExerciseWork, handleManualSkip, onClose]);
+  }, [phase, isRepsMode, isBottomSheetOpen, handleStartPrepCountdown, handleStartWorkImmediate, handleCompleteRepsSet, timer, startNextExerciseWork, handleManualSkip, handleCloseBottomSheet, onClose]);
 
   const formatTime = (sec: number) => {
     const m = Math.floor(sec / 60);
@@ -555,21 +645,33 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-[#060911]/95 backdrop-blur-xl flex flex-col overflow-y-auto">
       {/* Sticky Header */}
-      <div className="sticky top-0 z-30 flex items-center justify-between px-4 py-3 border-b border-slate-800/80 bg-[#090D16]/95 backdrop-blur-md">
-        <div>
-          <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
+      <div className="sticky top-0 z-30 flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-800/80 bg-[#090D16]/95 backdrop-blur-md">
+        <div className="min-w-0 flex-1">
+          <span
+            className={`text-[11px] font-extrabold uppercase tracking-wider block ${
+              phase === 'work' && !isRepsMode && !timer.isRunning
+                ? 'text-amber-300'
+                : 'text-amber-400'
+            }`}
+          >
             {phase === 'transition_next'
               ? 'Пауза и смена положения'
+              : phase === 'rest_set'
+              ? 'Отдых между подходами'
               : phase === 'ready'
-              ? `Упражнение ${currentIndex + 1} из ${exercises.length} • Ознакомление`
+              ? `Упражнение ${currentIndex + 1} из ${exercises.length} • Подготовка`
+              : phase === 'prep_countdown'
+              ? `Упражнение ${currentIndex + 1} из ${exercises.length} • Старт через ${prepSecondsLeft}`
+              : phase === 'work' && !isRepsMode && !timer.isRunning
+              ? `⏸ ПАУЗА — ВРЕМЯ НЕ ИДЁТ`
               : `Упражнение ${currentIndex + 1} из ${exercises.length} • В работе`}
           </span>
-          <h2 className="text-sm sm:text-base font-extrabold text-white truncate max-w-[220px] sm:max-w-md">
+          <h2 className="text-sm sm:text-base font-extrabold text-white leading-tight">
             {title}
           </h2>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={onToggleSound}
@@ -690,50 +792,83 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
       {/* 2. TRANSITION & REST SCREENS (WITH QUICK +/- BUTTONS)    */}
       {/* ======================================================== */}
       {(phase === 'transition_next' || phase === 'rest_set') && (
-        <div className="flex-1 flex flex-col items-center justify-center p-4 max-w-xl mx-auto w-full space-y-4 animate-fadeIn">
-          {/* Pause Timer Box */}
-          <div className="p-5 rounded-3xl bg-slate-900/90 border border-cyan-500/40 text-center w-full space-y-3 shadow-xl">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/20 text-cyan-300 text-xs font-bold uppercase tracking-wider">
-              <Clock className="w-3.5 h-3.5" />
-              {phase === 'rest_set' ? 'Отдых между подходами' : 'Пауза и смена положения'} • {timer.secondsLeft} сек
-            </span>
+        <div className="flex-1 flex flex-col p-3.5 sm:p-4 max-w-xl mx-auto w-full space-y-3 animate-fadeIn">
+          {/* Compact Pause Timer Box (Shifts to explicit Amber/Rose when paused) */}
+          <div
+            className={`p-3.5 sm:p-4 rounded-3xl text-center w-full space-y-2.5 shadow-xl transition-colors ${
+              timer.isRunning
+                ? 'bg-slate-900/90 border border-cyan-500/40'
+                : 'bg-rose-950/80 border-2 border-amber-400 shadow-rose-500/20'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              {timer.isRunning ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-500/20 text-cyan-300 text-[11px] font-bold uppercase tracking-wider">
+                  <Clock className="w-3.5 h-3.5" />
+                  {phase === 'rest_set' ? 'Отдых между подходами' : 'Пауза и смена позы'}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400 text-slate-950 text-[11px] font-black uppercase tracking-wider animate-pulse">
+                  ⏸ ПАУЗА — ВРЕМЯ НЕ ИДЁТ
+                </span>
+              )}
 
-            <div className="text-4xl sm:text-5xl font-mono font-black text-cyan-300">
-              00:{String(timer.secondsLeft).padStart(2, '0')}
+              <div
+                className={`text-3xl sm:text-4xl font-mono font-black ${
+                  timer.isRunning ? 'text-cyan-300' : 'text-amber-300'
+                }`}
+              >
+                00:{String(timer.secondsLeft).padStart(2, '0')}
+              </div>
             </div>
 
-            <p className="text-xs text-slate-300">
-              {phase === 'rest_set'
-                ? `Восстановите дыхание перед подходом ${currentSet + 1} из ${totalSetsForCurrent}.`
-                : 'Отдышитесь и ознакомьтесь со следующим упражнением.'}
-            </p>
+            {!timer.isRunning && (
+              <button
+                type="button"
+                onClick={timer.toggleRunning}
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-black text-sm shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2 animate-pulse cursor-pointer"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>Продолжить отсчёт</span>
+              </button>
+            )}
 
-            {/* Quick Rest Adjustments: [-15с] [+15с] [Пропустить] */}
-            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+            {/* Quick Rest Adjustments: [-15с] [⏸/▶] [+15с] [Пропустить] */}
+            <div className="flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={() => timer.adjustSeconds(-15)}
-                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer min-h-[40px]"
                 title="Убавить 15 секунд"
               >
-                <Minus className="w-3.5 h-3.5" /> 15 сек
+                <Minus className="w-3.5 h-3.5" /> 15с
+              </button>
+
+              <button
+                type="button"
+                onClick={timer.toggleRunning}
+                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold transition flex items-center gap-1 cursor-pointer min-h-[40px]"
+                title={timer.isRunning ? 'Пауза' : 'Продолжить'}
+              >
+                {timer.isRunning ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                <span>{timer.isRunning ? 'Пауза' : 'Пуск'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => timer.adjustSeconds(15)}
-                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer min-h-[40px]"
                 title="Добавить 15 секунд"
               >
-                <Plus className="w-3.5 h-3.5" /> 15 сек
+                <Plus className="w-3.5 h-3.5" /> 15с
               </button>
 
               <button
                 type="button"
                 onClick={handleManualSkip}
-                className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-black transition flex items-center gap-1.5 shadow cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-black transition flex items-center gap-1.5 shadow cursor-pointer min-h-[40px]"
               >
-                <span>Пропустить отдых</span>
+                <span>Начать следующее</span>
                 <FastForward className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -741,7 +876,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
 
           {/* Station Transition Safety Alert */}
           {phase === 'transition_next' && currentExercise?.category === 'walking' && nextExercise?.category !== 'walking' && (
-            <div className="w-full rounded-3xl bg-amber-950/70 border-2 border-amber-500/80 p-4 space-y-1.5 shadow-xl text-left animate-fadeIn">
+            <div className="w-full rounded-3xl bg-amber-950/70 border-2 border-amber-500/80 p-3.5 space-y-1 shadow-xl text-left animate-fadeIn">
               <div className="flex items-center gap-2 text-amber-300 font-black text-xs uppercase tracking-wide">
                 <span className="text-base">🛑</span>
                 <span>Безопасная смена станции: Плавно остановите дорожку</span>
@@ -753,7 +888,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
           )}
 
           {phase === 'transition_next' && currentExercise?.category !== 'walking' && nextExercise?.category === 'walking' && (
-            <div className="w-full rounded-3xl bg-emerald-950/70 border-2 border-emerald-500/80 p-4 space-y-1.5 shadow-xl text-left animate-fadeIn">
+            <div className="w-full rounded-3xl bg-emerald-950/70 border-2 border-emerald-500/80 p-3.5 space-y-1 shadow-xl text-left animate-fadeIn">
               <div className="flex items-center gap-2 text-emerald-300 font-black text-xs uppercase tracking-wide">
                 <span className="text-base">🚶</span>
                 <span>Переход на дорожку Walking Pad</span>
@@ -764,21 +899,20 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
             </div>
           )}
 
-          {/* Preview for next exercise during transition_next */}
+          {/* Immediately visible Next Exercise Preview during transition_next */}
           {phase === 'transition_next' && nextExercise && (
-            <div className="w-full rounded-3xl bg-slate-900/90 border border-slate-800 p-4 sm:p-5 space-y-3.5 shadow-lg">
-              <div className="flex items-center justify-between">
+            <div className="w-full rounded-3xl bg-slate-900/90 border border-slate-800 p-3.5 sm:p-4 space-y-3 shadow-lg">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
                   Далее: Упражнение #{currentIndex + 2} из {exercises.length}
                 </span>
-                <span className="text-xs text-slate-400 font-bold">
+                <span className="text-xs text-slate-300 font-bold shrink-0">
                   {nextExercise.defaultReps || `${nextExercise.defaultSeconds} сек`}
                 </span>
               </div>
 
               <div>
-                <h3 className="text-base sm:text-lg font-black text-white">{nextExercise.titleRu}</h3>
-                <p className="text-xs text-slate-400">{nextExercise.titleEn}</p>
+                <h3 className="text-base sm:text-lg font-black text-white leading-snug">{nextExercise.titleRu}</h3>
               </div>
 
               <BiomechanicalVisualizer
@@ -789,27 +923,24 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
                 title={nextExercise.titleRu}
                 muscleGroups={nextExercise.muscleGroups}
                 secondaryMuscles={nextExercise.secondaryMuscles}
+                compact={true}
               />
 
-              {/* 2-3 Short Quick Steps */}
-              <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+              {/* Full, Non-Truncated Movement Essence */}
+              <div className="p-3 rounded-2xl bg-slate-950/85 border border-slate-800/80 space-y-1.5">
                 <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-400 block">
-                  Суть движения:
+                  Суть следующего движения:
                 </span>
-                <ol className="space-y-1 text-xs sm:text-sm text-slate-200">
+                <ol className="space-y-1.5 text-sm text-slate-100">
                   {getCleanQuickSteps(nextExercise).map((step, i) => (
                     <li key={i} className="flex items-start gap-2">
-                      <span className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 text-[11px] font-black flex items-center justify-center shrink-0 mt-0.5">
                         {i + 1}
                       </span>
-                      <span className="leading-snug">{step}</span>
+                      <span className="leading-relaxed">{step}</span>
                     </li>
                   ))}
                 </ol>
-              </div>
-
-              <div className="p-2 rounded-xl bg-cyan-950/30 border border-cyan-500/30 text-center text-xs text-cyan-300 font-medium">
-                ⚡ Упражнение начнётся автоматически через <strong>{timer.secondsLeft} сек</strong>
               </div>
             </div>
           )}
@@ -820,85 +951,169 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
       {/* 3. READY STATE: INITIAL PREP BEFORE WORKOUT START        */}
       {/* ======================================================== */}
       {phase === 'ready' && (
-        <div className="flex-1 p-4 max-w-xl mx-auto w-full space-y-4 animate-fadeIn">
-          <div className="p-5 rounded-3xl bg-slate-900/90 border border-slate-800/90 space-y-4 shadow-xl">
-            {/* Top Badge & Number */}
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold uppercase tracking-wider">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                Ознакомление перед стартом
-              </span>
-              <span className="text-xs font-bold text-slate-400">
-                {currentExercise.defaultReps || `${timer.secondsLeft} сек`}
-              </span>
-            </div>
-
-            {/* Exercise Title */}
-            <div>
-              <h2 className="text-xl sm:text-2xl font-black text-white leading-tight">
-                {currentExercise.titleRu}
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">{currentExercise.titleEn}</p>
-            </div>
-
-            {/* Visualizer Photo / Anatomical Map */}
-            <BiomechanicalVisualizer
-              exerciseId={currentExercise.id}
-              imageUrl={currentExercise.imageUrl}
-              pose={currentExercise.pose}
-              category={currentExercise.category}
-              title={currentExercise.titleRu}
-              muscleGroups={currentExercise.muscleGroups}
-              secondaryMuscles={currentExercise.secondaryMuscles}
-            />
-
-            {/* Quick Action Tags */}
-            <div className="flex flex-wrap gap-1.5">
-              {quickTags.map((tag, i) => (
-                <span
-                  key={i}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-semibold text-slate-300"
-                >
-                  <span>{tag.icon}</span>
-                  <span>{tag.label}</span>
+        <div className="flex-1 flex flex-col justify-between max-w-xl mx-auto w-full animate-fadeIn">
+          <div className="p-3.5 sm:p-4 space-y-3">
+            <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-slate-800/90 space-y-3.5 shadow-xl">
+              {/* Top Badge & Duration */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold uppercase tracking-wider">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  Подготовка к 1-му упражнению
                 </span>
-              ))}
-            </div>
+                <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs font-black text-white shrink-0">
+                  {isRepsMode ? currentExercise.defaultReps : formatTime(timer.secondsLeft)}
+                </span>
+              </div>
 
-            {/* 2-3 Short Punchy Action Steps */}
-            <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-1.5">
-              <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-400 block">
-                Суть движения:
-              </span>
-              <ol className="space-y-1.5 text-sm sm:text-base text-slate-200">
-                {quickSteps.map((step, i) => (
-                  <li key={i} className="flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
-                      {i + 1}
-                    </span>
-                    <span className="leading-snug">{step}</span>
-                  </li>
+              {/* Full Exercise Title */}
+              <div>
+                <h2 className="text-lg sm:text-2xl font-black text-white leading-snug">
+                  {currentExercise.titleRu}
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">{currentExercise.titleEn}</p>
+              </div>
+
+              {/* Visualizer Photo / Anatomical Map */}
+              <BiomechanicalVisualizer
+                exerciseId={currentExercise.id}
+                imageUrl={currentExercise.imageUrl}
+                pose={currentExercise.pose}
+                category={currentExercise.category}
+                title={currentExercise.titleRu}
+                muscleGroups={currentExercise.muscleGroups}
+                secondaryMuscles={currentExercise.secondaryMuscles}
+                compact={true}
+              />
+
+              {/* Quick Action Tags */}
+              <div className="flex flex-wrap gap-1.5">
+                {quickTags.map((tag, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-semibold text-slate-300"
+                  >
+                    <span>{tag.icon}</span>
+                    <span>{tag.label}</span>
+                  </span>
                 ))}
-              </ol>
-            </div>
+              </div>
 
-            {/* Giant Start Button */}
-            <div className="space-y-2 pt-1">
-              <button
-                type="button"
-                onClick={handleStartWork}
-                className="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-base shadow-xl shadow-amber-500/30 flex items-center justify-center gap-2.5 transition transform active:scale-[0.99] cursor-pointer"
-              >
-                <Play className="w-5 h-5 fill-current" />
-                <span>
-                  НАЧАТЬ ТРЕНИРОВКУ {isRepsMode ? `(${currentExercise.defaultReps})` : `(${formatTime(timer.secondsLeft)})`}
+              {/* Full, Readable Starting Position & Movement Cues (No truncation / line-clamp) */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/85 border border-slate-800/80 space-y-2">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-400 block">
+                  Исходное положение и суть движения:
                 </span>
-              </button>
+                <ol className="space-y-2 text-sm sm:text-base text-slate-100">
+                  {quickSteps.map((step, i) => (
+                    <li key={i} className="flex items-start gap-2.5">
+                      <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
+                        {i + 1}
+                      </span>
+                      <span className="leading-relaxed">
+                        {i === 0 && (
+                          <strong className="text-amber-300 font-bold">Старт: </strong>
+                        )}
+                        {step}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+          </div>
 
-              <p className="text-[11px] text-center text-slate-400 pt-1">
-                Старт по кнопке или клавише <strong>Пробел</strong>. Далее упражнения будут сменяться <strong>автоматически</strong> после перерывов.
+          {/* Sticky Bottom Thumb-Zone CTA Bar */}
+          <div className="sticky bottom-0 z-20 bg-[#060911]/95 backdrop-blur-md border-t border-slate-800/80 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-2">
+            <button
+              type="button"
+              onClick={handleStartPrepCountdown}
+              className="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-base shadow-xl shadow-amber-500/30 flex items-center justify-center gap-2.5 transition transform active:scale-[0.99] cursor-pointer"
+            >
+              <Play className="w-5 h-5 fill-current" />
+              <span>Я готов, поехали!</span>
+              <span className="px-2 py-0.5 rounded-lg bg-slate-950/20 text-xs font-extrabold">
+                3–2–1
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleStartWorkImmediate}
+              className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer min-h-[42px]"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span>Старт сразу без отсчёта</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 3.5. PREP COUNTDOWN STATE: 3 — 2 — 1 — GONG              */}
+      {/* ======================================================== */}
+      {phase === 'prep_countdown' && (
+        <div className="flex-1 flex flex-col justify-between p-4 max-w-xl mx-auto w-full space-y-4 animate-fadeIn">
+          <div className="space-y-4">
+            {/* High-Contrast Floor-Readable Countdown */}
+            <div className="p-6 rounded-3xl bg-gradient-to-b from-amber-950/60 to-slate-900/95 border-2 border-amber-500/60 text-center space-y-2 shadow-2xl shadow-amber-500/20">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-black uppercase tracking-wider">
+                Займите исходное положение
+              </span>
+              <div
+                key={prepSecondsLeft}
+                className="text-7xl sm:text-8xl font-mono font-black text-amber-400 tracking-tight py-1 animate-pulse"
+                aria-live="assertive"
+              >
+                {prepSecondsLeft}
+              </div>
+              <p className="text-xs sm:text-sm text-amber-100/90 font-semibold">
+                После гонга начнётся отсчёт ({isRepsMode ? currentExercise.defaultReps : formatTime(currentExercise.defaultSeconds)})
               </p>
             </div>
+
+            {/* Exercise Preview + Starting Position Reminder */}
+            <div className="p-4 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-3">
+              <h3 className="text-base sm:text-lg font-black text-white leading-snug">
+                {currentExercise.titleRu}
+              </h3>
+
+              <BiomechanicalVisualizer
+                exerciseId={currentExercise.id}
+                imageUrl={currentExercise.imageUrl}
+                pose={currentExercise.pose}
+                category={currentExercise.category}
+                title={currentExercise.titleRu}
+                muscleGroups={currentExercise.muscleGroups}
+                secondaryMuscles={currentExercise.secondaryMuscles}
+                compact={true}
+              />
+
+              {quickSteps[0] && (
+                <div className="p-3 rounded-2xl bg-slate-950/90 border border-amber-500/30 text-sm sm:text-base text-slate-100 leading-relaxed">
+                  <strong className="text-amber-400">Исходное положение: </strong>
+                  {quickSteps[0]}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+            <button
+              type="button"
+              onClick={handleCancelPrepCountdown}
+              className="py-3.5 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Назад</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleStartWorkImmediate}
+              className="py-3.5 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Zap className="w-4 h-4" />
+              <span>Начать сейчас</span>
+            </button>
           </div>
         </div>
       )}
@@ -907,15 +1122,43 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
       {/* 4. ACTIVE WORK SCREEN (GLANCEABLE GYM UI)                */}
       {/* ======================================================== */}
       {phase === 'work' && (
-        <div className="flex-1 p-4 max-w-xl mx-auto w-full flex flex-col justify-between space-y-4 animate-fadeIn">
-          <div className="space-y-4">
-            {/* Top Bar: Title & Set Counter */}
-            <div className="p-4 rounded-3xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
-              <div className="space-y-0.5 max-w-[280px] sm:max-w-md">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400">
+        <div className="flex-1 p-3.5 sm:p-4 max-w-xl mx-auto w-full flex flex-col justify-between space-y-3.5 animate-fadeIn">
+          <div className="space-y-3.5">
+            {/* Auto-resume confirmation notice after closing Technique sheet */}
+            {autoResumeNotice && (
+              <div className="p-3 rounded-2xl bg-emerald-950/85 border border-emerald-400/60 text-emerald-200 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-lg animate-fadeIn">
+                <Play className="w-4 h-4 fill-current text-emerald-400" />
+                <span>Шторка закрыта — таймер автоматически продолжен!</span>
+              </div>
+            )}
+
+            {/* High-Contrast Sticky Pause Status Bar whenever paused in duration mode */}
+            {!isRepsMode && !timer.isRunning && !isBottomSheetOpen && (
+              <div className="sticky top-[62px] z-20 px-4 py-2.5 rounded-2xl bg-rose-950/95 border-2 border-amber-400 shadow-2xl shadow-rose-500/30 flex items-center justify-between gap-2 animate-fadeIn">
+                <div className="flex items-center gap-2 text-amber-300 font-black text-xs sm:text-sm uppercase tracking-wide">
+                  <span className="text-base">⏸</span>
+                  <span>ТАЙМЕР НА ПАУЗЕ — ВРЕМЯ НЕ ИДЁТ</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={timer.toggleRunning}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black text-xs flex items-center gap-1 shadow shrink-0 cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Старт</span>
+                </button>
+              </div>
+            )}
+
+            {/* Top Bar: Full Title (no truncate) & Set Counter */}
+            <div className="p-3.5 sm:p-4 rounded-3xl bg-slate-900/90 border border-slate-800 flex items-start justify-between gap-3">
+              <div className="space-y-0.5 min-w-0 flex-1">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 block">
                   {currentExercise.category === 'kettlebell' ? 'Силовой сет' : 'Активная фаза'}
                 </span>
-                <h3 className="text-base sm:text-lg font-black text-white truncate">{currentExercise.titleRu}</h3>
+                <h3 className="text-base sm:text-lg font-black text-white leading-snug">
+                  {currentExercise.titleRu}
+                </h3>
               </div>
               <div className="px-3 py-1 rounded-xl bg-slate-800 border border-slate-700 text-xs font-black text-white shrink-0">
                 Сет {currentSet}/{totalSetsForCurrent}
@@ -931,6 +1174,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
               title={currentExercise.titleRu}
               muscleGroups={currentExercise.muscleGroups}
               secondaryMuscles={currentExercise.secondaryMuscles}
+              compact={true}
             />
 
             {/* ACTION BLOCK: Distinct REPS vs DURATION Mode */}
@@ -994,20 +1238,50 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
                 </button>
               </div>
             ) : (
-              // --- DURATION MODE (Countdown Timer) ---
-              <div className="p-5 rounded-3xl bg-slate-900/90 border border-slate-800 text-center space-y-3 shadow-lg">
-                <div className="flex items-center justify-between text-xs text-slate-400">
-                  <span className="text-amber-400 font-extrabold flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
-                    ВЫПОЛНЕНИЕ
+              // --- DURATION MODE (Countdown Timer with Explicit Running vs Paused State) ---
+              <div
+                className={`p-4 sm:p-5 rounded-3xl text-center space-y-3 shadow-lg transition-colors ${
+                  timer.isRunning
+                    ? 'bg-slate-900/90 border border-slate-800'
+                    : 'bg-rose-950/75 border-2 border-amber-400 shadow-2xl shadow-rose-500/25'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  {timer.isRunning ? (
+                    <span className="text-emerald-400 font-extrabold flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                      ВРЕМЯ ИДЁТ
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-400 text-slate-950 font-black text-[11px] uppercase tracking-wider">
+                      ⏸ ПАУЗА — ВРЕМЯ НЕ ИДЁТ
+                    </span>
+                  )}
+                  <span className={`font-bold ${timer.isRunning ? 'text-slate-400' : 'text-amber-200'}`}>
+                    Работа по таймеру
                   </span>
-                  <span className="font-bold">Работа по таймеру</span>
                 </div>
 
                 {/* Giant Timer Numbers */}
-                <div className="text-5xl sm:text-6xl font-mono font-black tracking-tight text-white">
+                <div
+                  className={`text-5xl sm:text-6xl font-mono font-black tracking-tight ${
+                    timer.isRunning ? 'text-white' : 'text-amber-300'
+                  }`}
+                >
                   {formatTime(timer.secondsLeft)}
                 </div>
+
+                {/* Prominent Pulsing Resume Button when Paused */}
+                {!timer.isRunning && (
+                  <button
+                    type="button"
+                    onClick={timer.toggleRunning}
+                    className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-black text-sm sm:text-base shadow-xl shadow-emerald-500/30 flex items-center justify-center gap-2 animate-pulse cursor-pointer"
+                  >
+                    <Play className="w-5 h-5 fill-current" />
+                    <span>Продолжить тренировку</span>
+                  </button>
+                )}
 
                 {/* Walking Pad Speed Selector & Real-Time Stats */}
                 {isWalkingExercise && (
@@ -1121,25 +1395,28 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
                   <button
                     type="button"
                     onClick={() => timer.adjustSeconds(15)}
-                    className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                    className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer min-h-[44px]"
                     title="Добавить 15 секунд"
                   >
                     <Plus className="w-3.5 h-3.5" /> 15с
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={timer.toggleRunning}
-                    className="p-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black shadow-lg shadow-amber-500/25 transition cursor-pointer"
-                    title={timer.isRunning ? 'Пауза (Пробел)' : 'Продолжить (Пробел)'}
-                  >
-                    {timer.isRunning ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current" />}
-                  </button>
+                  {timer.isRunning && (
+                    <button
+                      type="button"
+                      onClick={timer.toggleRunning}
+                      className="p-4 rounded-2xl font-black shadow-lg transition cursor-pointer bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/25"
+                      title="Пауза (Пробел)"
+                      aria-label="Пауза"
+                    >
+                      <Pause className="w-6 h-6 fill-current" />
+                    </button>
+                  )}
 
                   <button
                     type="button"
                     onClick={handleManualSkip}
-                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer min-h-[44px]"
                     title="Завершить подход"
                   >
                     <span>Далее</span>
@@ -1149,18 +1426,18 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
               </div>
             )}
 
-            {/* 2-3 Short Quick Action Steps (Clean & Legible text-sm sm:text-base) */}
-            <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+            {/* Full, Non-Truncated Quick Action Steps (Zero line-clamp / truncate) */}
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400 block">
-                Акцент движения:
+                Как выполнять (по шагам):
               </span>
-              <div className="space-y-1.5 text-sm sm:text-base text-slate-200 font-medium">
+              <div className="space-y-2 text-sm sm:text-base text-slate-100 font-medium">
                 {quickSteps.map((step, i) => (
                   <div key={i} className="flex items-start gap-2.5">
                     <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 text-xs font-black flex items-center justify-center shrink-0 mt-0.5">
                       {i + 1}
                     </span>
-                    <span className="leading-snug">{step}</span>
+                    <span className="leading-relaxed">{step}</span>
                   </div>
                 ))}
               </div>
@@ -1171,7 +1448,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
           <button
             type="button"
             onClick={handleOpenBottomSheet}
-            className="w-full py-2.5 px-4 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white flex items-center justify-center gap-2 transition cursor-pointer"
+            className="w-full py-3 px-4 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white flex items-center justify-center gap-2 transition cursor-pointer min-h-[46px]"
           >
             <Info className="w-4 h-4 text-cyan-400" />
             <span>ℹ️ Техника и защита спины</span>
@@ -1260,9 +1537,20 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
             <button
               type="button"
               onClick={handleCloseBottomSheet}
-              className="w-full py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition cursor-pointer"
+              className={`w-full py-3.5 rounded-2xl font-black text-xs sm:text-sm transition cursor-pointer flex items-center justify-center gap-2 ${
+                wasRunningBeforeSheetRef.current
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-lg'
+                  : 'bg-slate-800 hover:bg-slate-700 text-white'
+              }`}
             >
-              Вернуться к упражнению
+              {wasRunningBeforeSheetRef.current ? (
+                <>
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>Вернуться и продолжить таймер</span>
+                </>
+              ) : (
+                <span>Вернуться к упражнению</span>
+              )}
             </button>
           </div>
         </div>

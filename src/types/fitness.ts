@@ -116,7 +116,7 @@ export interface ActiveWorkoutBackup {
   };
   currentIndex: number;
   currentSet: number;
-  phase: 'ready' | 'work' | 'rest_set' | 'transition_next' | 'finished';
+  phase: 'ready' | 'prep_countdown' | 'work' | 'rest_set' | 'transition_next' | 'finished';
   secondsLeft: number;
   targetEndTimestamp: number | null;
   elapsedTotalSeconds: number;
@@ -179,6 +179,24 @@ export interface ReminderSettings {
   walkingTime?: string; // "14:00" или "20:00"
   walkingDays?: number[]; // [0, 1, 2, 3, 4, 5, 6]
   soundEnabled: boolean;
+}
+
+/**
+ * Extracts 2-3 complete, non-truncated action sentences for the workout player and cards.
+ * Never slices mid-word or cuts off after a single period when a step has multiple cues.
+ */
+export function getCleanQuickSteps(ex?: Exercise | null): string[] {
+  if (!ex) return [];
+  if (ex.quickSteps && ex.quickSteps.length > 0) {
+    return ex.quickSteps
+      .slice(0, 3)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return (ex.steps || [])
+    .slice(0, 3)
+    .map((step) => step.replace(/^(Шаг|Фаза)\s*\d+[:.-]\s*/i, '').trim())
+    .filter(Boolean);
 }
 
 export function isExerciseBilateral(ex?: Exercise | null): boolean {
