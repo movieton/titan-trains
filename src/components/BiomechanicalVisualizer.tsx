@@ -151,7 +151,9 @@ export const BiomechanicalVisualizer: React.FC<BiomechanicalVisualizerProps> = (
             <img
               src={verifiedPhoto}
               alt={title}
-              className="w-full object-cover max-h-[260px] cursor-pointer hover:scale-[1.01] transition-transform duration-300"
+              className={`w-full object-cover cursor-pointer hover:scale-[1.01] transition-transform duration-300 ${
+                compact ? 'max-h-[165px] sm:max-h-[210px]' : 'max-h-[230px] sm:max-h-[260px]'
+              }`}
               onClick={() => setIsZoomed(true)}
               loading="lazy"
             />
@@ -187,14 +189,14 @@ export const BiomechanicalVisualizer: React.FC<BiomechanicalVisualizerProps> = (
         </div>
       ) : (
         // Mode 2: Interactive High-Tech Vector Anatomical Silhouette (Front & Back Views)
-        <div className={`p-4 sm:p-5 flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900/80 to-[#0A0F1D]`}>
-          <div className="w-full flex flex-col sm:flex-row items-center justify-around gap-4 py-2">
+        <div className={`${compact ? 'p-3' : 'p-4 sm:p-5'} flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900/80 to-[#0A0F1D]`}>
+          <div className="w-full flex flex-row items-center justify-around gap-2 sm:gap-4 py-1">
             {/* FRONT VIEW (ANTERIOR) */}
             <div className="flex flex-col items-center">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Вид спереди (Anterior)
+                Спереди
               </span>
-              <svg viewBox="0 0 100 180" className="w-28 h-44 drop-shadow-md">
+              <svg viewBox="0 0 100 180" className={`${compact ? 'w-20 h-32 sm:w-24 sm:h-36' : 'w-24 h-36 sm:w-28 sm:h-44'} drop-shadow-md`}>
                 {/* Head */}
                 <ellipse cx="50" cy="14" rx="9" ry="11" fill="#334155" stroke="#475569" strokeWidth="1" />
                 {/* Neck */}
@@ -243,9 +245,9 @@ export const BiomechanicalVisualizer: React.FC<BiomechanicalVisualizerProps> = (
             {/* BACK VIEW (POSTERIOR) */}
             <div className="flex flex-col items-center">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Вид сзади (Posterior)
+                Сзади
               </span>
-              <svg viewBox="0 0 100 180" className="w-28 h-44 drop-shadow-md">
+              <svg viewBox="0 0 100 180" className={`${compact ? 'w-20 h-32 sm:w-24 sm:h-36' : 'w-24 h-36 sm:w-28 sm:h-44'} drop-shadow-md`}>
                 {/* Head */}
                 <ellipse cx="50" cy="14" rx="9" ry="11" fill="#334155" stroke="#475569" strokeWidth="1" />
 
