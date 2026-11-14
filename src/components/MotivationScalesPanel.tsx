@@ -45,6 +45,8 @@ export const MotivationScalesPanel: React.FC<MotivationScalesPanelProps> = ({
   const categoryLogs = logs.filter((l) => l.category === category);
   const totalSessionsDone = categoryLogs.length;
   const totalKcalCategory = categoryLogs.reduce((acc, l) => acc + l.kcalBurned, 0);
+  const totalWalkingSteps = categoryLogs.reduce((acc, l) => acc + (l.walkingSteps || 0), 0);
+  const totalWalkingDistanceKm = Math.round(categoryLogs.reduce((acc, l) => acc + (l.distanceKm || 0), 0) * 10) / 10;
 
   // Calculate consecutive streak & success vs missed over last 14 days
   let completedDaysCount = 0;
@@ -73,6 +75,19 @@ export const MotivationScalesPanel: React.FC<MotivationScalesPanelProps> = ({
       if (slotsSkippedOnDay > 0 || idx < 13) {
         missedDaysCount++;
         return { ...dayObj, status: idx === 13 && slotsSkippedOnDay === 0 ? ('pending' as const) : ('missed' as const) };
+      }
+      return { ...dayObj, status: 'pending' as const };
+    }
+
+    if (category === 'walking') {
+      const done = categoryLogs.some((l) => l.dateISO === dayObj.iso);
+      if (done) {
+        completedDaysCount++;
+        return { ...dayObj, status: 'done' as const };
+      }
+      if (idx < 13) {
+        missedDaysCount++;
+        return { ...dayObj, status: 'missed' as const };
       }
       return { ...dayObj, status: 'pending' as const };
     }
@@ -129,6 +144,7 @@ export const MotivationScalesPanel: React.FC<MotivationScalesPanelProps> = ({
             <h3 className="text-lg sm:text-xl font-black text-white">
               {category === 'morning' && 'Статистика и Серия Утренних Зарядок'}
               {category === 'breaks' && 'Дисциплина Рабочих Перерывов за ПК'}
+              {category === 'walking' && 'Аэробный Прогресс: Walking Pad и Шаги'}
               {category === 'kettlebell' && 'Силовой Прогресс: Гири 16/24 кг и Калистеника'}
             </h3>
           </div>
@@ -252,6 +268,28 @@ export const MotivationScalesPanel: React.FC<MotivationScalesPanelProps> = ({
         </div>
       </div>
 
+      {/* Dedicated Walking Pad Summary Banner (if in walking category) */}
+      {category === 'walking' && totalSessionsDone > 0 && (
+        <div className="grid grid-cols-3 gap-2 p-3.5 rounded-3xl bg-emerald-950/40 border border-emerald-500/30 text-center">
+          <div className="p-2 rounded-2xl bg-slate-950/80 border border-emerald-500/20">
+            <div className="text-[10px] font-bold text-slate-400 uppercase">Всего шагов</div>
+            <div className="text-base sm:text-lg font-black text-emerald-300">
+              {totalWalkingSteps.toLocaleString('ru-RU')}
+            </div>
+          </div>
+          <div className="p-2 rounded-2xl bg-slate-950/80 border border-emerald-500/20">
+            <div className="text-[10px] font-bold text-slate-400 uppercase">Дистанция</div>
+            <div className="text-base sm:text-lg font-black text-white">{totalWalkingDistanceKm} км</div>
+          </div>
+          <div className="p-2 rounded-2xl bg-slate-950/80 border border-emerald-500/20">
+            <div className="text-[10px] font-bold text-slate-400 uppercase">В среднем / сессия</div>
+            <div className="text-base sm:text-lg font-black text-amber-300">
+              {Math.round(totalWalkingSteps / totalSessionsDone).toLocaleString('ru-RU')} ш.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Recent Completed Sessions History */}
       <div className="p-4 rounded-3xl bg-slate-900/80 border border-slate-800 space-y-3">
         <div className="flex items-center justify-between">
@@ -282,6 +320,8 @@ export const MotivationScalesPanel: React.FC<MotivationScalesPanelProps> = ({
                     <div className="text-[11px] text-slate-400">
                       Дата: {log.dateISO} • {Math.round(log.durationSeconds / 60)} мин • Упражнений:{' '}
                       {log.exercisesCompleted}/{log.exercisesTotal}
+                      {log.walkingSteps ? ` • 🚶 ${log.walkingSteps.toLocaleString('ru-RU')} шагов` : ''}
+                      {log.distanceKm ? ` (${log.distanceKm} км)` : ''}
                     </div>
                   </div>
                 </div>

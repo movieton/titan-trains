@@ -122,6 +122,9 @@ export interface ActiveWorkoutBackup {
   elapsedTotalSeconds: number;
   completedCount: number;
   repCounter: number;
+  selectedWalkingSpeed?: number;
+  accumulatedWalkingSteps?: number;
+  accumulatedWalkingKcal?: number;
   timestamp: number; // Date.now() when saved
 }
 

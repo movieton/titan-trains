@@ -436,6 +436,11 @@ export function calculateWalkingMetrics(
   distanceKm: number;
   totalDurationSeconds: number;
 } {
+  const safeWeight =
+    typeof userWeightKg === 'number' && !isNaN(userWeightKg) && userWeightKg >= 30 && userWeightKg <= 300
+      ? userWeightKg
+      : 110;
+
   let totalDurationSeconds = 0;
   let totalKcal = 0;
   let totalSteps = 0;
@@ -447,7 +452,7 @@ export function calculateWalkingMetrics(
 
     // MET formula: kcal = MET * weightKg * hours
     const met = ex.metValue || (defaultSpeedKmh >= 5.8 ? 5.0 : defaultSpeedKmh >= 5.0 ? 4.3 : 3.2);
-    totalKcal += Math.round(met * userWeightKg * durHours);
+    totalKcal += Math.round(met * safeWeight * durHours);
 
     // Cadence: steps per minute
     const cadence = ex.cadenceSpm || (defaultSpeedKmh >= 5.8 ? 134 : defaultSpeedKmh >= 5.0 ? 122 : 105);
@@ -573,8 +578,9 @@ export function generateWalkingWorkout(
 export function generateHybridMixWorkout(params: {
   goal: MixGoal;
   structure: MixStructure;
-  totalMinutes: 25 | 35 | 45;
+  totalMinutes: 20 | 25 | 35 | 45;
   includeBands: boolean;
+  includeKettlebells?: boolean;
   userWeightKg: number;
 }): GeneratedWorkoutPlan {
   const { goal, structure, totalMinutes, includeBands, userWeightKg } = params;
