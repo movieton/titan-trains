@@ -27,6 +27,8 @@ const EQUIPMENT_LABELS: Record<string, string> = {
   bands: 'Фитнес-резинка',
   kb16: 'Гиря 16 кг',
   kb24: 'Гиря 24 кг',
+  'walking-pad': 'Дорожка',
+  'pullup-bar': 'Турник',
 };
 
 export const ExerciseDetailCard: React.FC<ExerciseDetailCardProps> = ({

@@ -1,19 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRegisterSW } from 'virtual:pwa-register/react';
 import {
   Exercise,
   ExerciseCategory,
-  EquipmentId,
   SubView,
   UserState,
   ActiveWorkoutBackup,
-  DailyBreakSlot,
 } from './types/fitness';
 import { EXERCISES_DB, KETTLEBELL_COMPLEXES_DB, KettlebellComplex } from './data/exercises';
 import {
   generateBreakWorkout,
   generateKettlebellWorkout,
   generateMorningWorkout,
-  getDefaultBreakSlots,
   getTodayISO,
   KETTLEBELL_WEEKLY_SCHEDULE,
 } from './utils/workoutBuilder';
@@ -22,9 +20,15 @@ import { WalkingTabPanel } from './components/WalkingTabPanel';
 import { ExerciseDetailCard } from './components/ExerciseDetailCard';
 import { ActiveWorkoutModal } from './components/ActiveWorkoutModal';
 import { AccountAndSettingsModal } from './components/AccountAndSettingsModal';
+import { LibraryBrowser } from './components/LibraryBrowser';
+import { ExerciseDetailSheet } from './components/ExerciseDetailSheet';
+import { OnboardingFlow } from './components/OnboardingFlow';
 import { soundEngine } from './utils/soundEngine';
 import { useBreakReminderTimer } from './hooks/useBreakReminderTimer';
 import { checkScheduledReminders } from './utils/notificationScheduler';
+import { buildSessionForAction, parseStartAction } from './utils/deepLink';
+import { loadUserState, migrateUserState, requestPersistentStorage, STORAGE_KEY } from './utils/userState';
+import { syncNativeReminders } from './utils/nativeReminders';
 import {
   Sun,
   Monitor,
@@ -37,158 +41,28 @@ import {
   Sparkles,
   BookOpen,
   Bell,
-  Cloud,
   CheckCircle2,
   XCircle,
-  Search,
-  Filter,
-  ShieldCheck,
   Clock,
   Flame,
-  ExternalLink,
   Calendar,
   Scale,
-  UserCheck,
-  Layers,
+  Settings,
 } from 'lucide-react';
 
-const STORAGE_KEY = 'titan_ultimate_fitness_state_v2';
+const CATEGORIES: ExerciseCategory[] = ['morning', 'breaks', 'walking', 'kettlebell'];
 
-function buildInitialUserState(): UserState {
-  const getOffsetISO = (daysBack: number) => {
-    const d = new Date();
-    d.setDate(d.getDate() - daysBack);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
-
-  const todayISO = getOffsetISO(0);
-  const d1 = getOffsetISO(1);
-  const d2 = getOffsetISO(2);
-  const d3 = getOffsetISO(3);
-  const d4 = getOffsetISO(4);
-  const d6 = getOffsetISO(6);
-  const d7 = getOffsetISO(7);
-  const d8 = getOffsetISO(8);
-  const d9 = getOffsetISO(9);
-  const d10 = getOffsetISO(10);
-  const d12 = getOffsetISO(12);
-  const d13 = getOffsetISO(13);
-
-  const defaultSlots = getDefaultBreakSlots();
-  defaultSlots[0].completedDates = [d12, d10, d9, d8, d6, d4, d3, d2, d1];
-  defaultSlots[1].completedDates = [d12, d10, d8, d6, d4, d3, d2, d1];
-  defaultSlots[2].completedDates = [d9, d8, d4, d2, d1];
-  defaultSlots[3].skippedDates = [d7, d4];
-
-  const morningSeedDays = [d13, d12, d10, d9, d8, d7, d6, d4, d3, d2, d1];
-  const kbSeedDays = [d12, d10, d8, d6, d3, d1];
-
-  return {
-    profile: {
-      name: 'Антон',
-      age: 36,
-      heightCm: 178,
-      startWeightKg: 110,
-      currentWeightKg: 110,
-      targetWeightKg: 88,
-      equipment: ['kb16', 'kb24', 'bands', 'mat', 'bodyweight'],
-      lowerBackGuard: true,
-    },
-    googleUser: null,
-    weightHistory: [{ dateISO: todayISO, weightKg: 110, note: 'Старт трансформации TITAN' }],
-    logs: [
-      ...morningSeedDays.map((iso, idx) => ({
-        id: `seed-morn-${idx}`,
-        dateISO: iso,
-        timestamp: `${iso}T08:15:00.000Z`,
-        category: 'morning' as const,
-        title: 'Утренняя Зарядка Титана (15 мин)',
-        durationSeconds: 900,
-        exercisesCompleted: 10,
-        exercisesTotal: 10,
-        kcalBurned: 148,
-        backComfort: 'great' as const,
-      })),
-      ...kbSeedDays.map((iso, idx) => ({
-        id: `seed-kb-${idx}`,
-        dateISO: iso,
-        timestamp: `${iso}T19:30:00.000Z`,
-        category: 'kettlebell' as const,
-        title:
-          idx % 2 === 0
-            ? 'Протокол А: Силовой Фундамент (16 кг + 24 кг)'
-            : 'Протокол В: Метаболический Шторм & Instagram Flows (16 кг)',
-        durationSeconds: 1560,
-        exercisesCompleted: 6,
-        exercisesTotal: 6,
-        kcalBurned: 345,
-        backComfort: 'great' as const,
-      })),
-      {
-        id: 'seed-brk-1',
-        dateISO: d1,
-        timestamp: `${d1}T13:35:00.000Z`,
-        category: 'breaks',
-        title: 'Офисный Перерыв Анти-Гиподинамия (7 мин)',
-        durationSeconds: 420,
-        exercisesCompleted: 6,
-        exercisesTotal: 6,
-        kcalBurned: 88,
-        backComfort: 'great',
-      },
-    ],
-    breakSlots: defaultSlots,
-    customMediaLinks: {},
-    favoriteExerciseIds: ['kb-swing-2h', 'kb-sumo-deadlift-24', 'morn-mcgill-curlup', 'brk-couch-hip-flexor-lunge'],
-    reminders: {
-      morningEnabled: true,
-      morningTime: '08:00',
-      morningDays: [1, 2, 3, 4, 5],
-      breaksEnabled: true,
-      breaksIntervalMinutes: 90,
-      breaksDays: [1, 2, 3, 4, 5],
-      breaksStartHour: 10,
-      breaksEndHour: 19,
-      kettlebellEnabled: true,
-      kettlebellTime: '19:30',
-      kettlebellDays: [1, 3, 5, 6],
-      soundEnabled: true,
-    },
-    selectedDurationMorning: 15,
-    selectedDurationBreak: 7,
-    selectedKettlebellProgram: 'foundation-16',
-  };
+interface NavSnap {
+  titan: true;
+  category: ExerciseCategory;
+  view: SubView;
+  settings: boolean;
+  sheet: string | null;
+  workout: boolean;
 }
 
 export function App() {
-  const [userState, setUserState] = useState<UserState>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const freshSlots = getDefaultBreakSlots();
-        if (parsed.breakSlots && Array.isArray(parsed.breakSlots)) {
-          parsed.breakSlots = freshSlots.map((fresh: DailyBreakSlot) => {
-            const old = parsed.breakSlots.find((s: any) => s.id === fresh.id);
-            return {
-              ...fresh,
-              completedDates: old?.completedDates || [],
-              skippedDates: old?.skippedDates || [],
-            };
-          });
-        } else {
-          parsed.breakSlots = freshSlots;
-        }
-        return parsed;
-      }
-    } catch {
-      // ignore
-    }
-    return buildInitialUserState();
-  });
+  const [userState, setUserState] = useState<UserState>(() => loadUserState());
 
   const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const initialCat = (params?.get('cat') as ExerciseCategory) || 'morning';
@@ -197,17 +71,12 @@ export function App() {
 
   // Main bottom navbar pillar: 'morning' | 'breaks' | 'kettlebell'
   const [activeCategory, setActiveCategory] = useState<ExerciseCategory>(
-    ['morning', 'breaks', 'kettlebell'].includes(initialCat) ? initialCat : 'morning'
+    CATEGORIES.includes(initialCat) ? initialCat : 'morning'
   );
   // Sub-branch inside each pillar: 'today' | 'progress' | 'library'
   const [activeSubView, setActiveSubView] = useState<SubView>(
     ['today', 'progress', 'library'].includes(initialSub) ? initialSub : 'today'
   );
-
-  // Library Filters
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedEquipment, setSelectedEquipment] = useState<EquipmentId | 'all'>('all');
-  const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
 
   // Active Workout Backup Storage Key (Task 2)
   const ACTIVE_BACKUP_STORAGE_KEY = 'titan_active_workout_backup';
@@ -250,12 +119,16 @@ export function App() {
     return null;
   });
 
-  // Kettlebell Library Switcher: individual exercises vs 12 full complexes
-  const [kettlebellLibMode, setKettlebellLibMode] = useState<'complexes' | 'exercises'>('complexes');
-  // Settings / Google Account / Reminders Modal
+  // Settings / reminders modal
   const [settingsOpen, setSettingsOpen] = useState(initialModal === 'settings');
+  const [openExerciseId, setOpenExerciseId] = useState<string | null>(null);
   // Toast notification for reminders
   const [reminderBanner, setReminderBanner] = useState<string | null>(null);
+  const pendingAction = useRef(parseStartAction(params?.get('action') || null));
+  const {
+    needRefresh: [needRefresh, setNeedRefresh],
+    updateServiceWorker,
+  } = useRegisterSW();
 
   // Morning Workout: Mat vs Standing by Bed (No Mat)
   const [morningNoMatMode, setMorningNoMatMode] = useState<boolean>(() => {
@@ -271,22 +144,99 @@ export function App() {
 
   // Background 15-second PWA Reminder Scheduler
   useEffect(() => {
+    if (!userState.profile.onboarded) return;
     const interval = setInterval(() => {
-      checkScheduledReminders(userState.reminders, (_type, title) => {
+      checkScheduledReminders(userState.reminders, userState.breakSlots, (_type, title) => {
         soundEngine.playStartBell();
-        setReminderBanner(`🔔 Напоминание TITAN: ${title}`);
+        setReminderBanner(`Напоминание: ${title}. Оно сработало, потому что Титан открыт.`);
       });
     }, 15000);
     return () => clearInterval(interval);
-  }, [userState.reminders]);
+  }, [userState.reminders, userState.breakSlots, userState.profile.onboarded]);
 
   useEffect(() => {
+    if (!userState.profile.onboarded) return;
+    void syncNativeReminders(userState.reminders, userState.breakSlots);
+  }, [userState.reminders, userState.breakSlots, userState.profile.onboarded]);
+
+  useEffect(() => {
+    if (!userState.profile.onboarded) return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(userState));
     } catch {
       // ignore storage quota
     }
+    requestPersistentStorage();
   }, [userState]);
+
+  const navState = (patch: Partial<NavSnap> = {}): NavSnap => ({
+    titan: true,
+    category: patch.category ?? activeCategory,
+    view: patch.view ?? activeSubView,
+    settings: patch.settings ?? false,
+    sheet: patch.sheet === undefined ? null : patch.sheet,
+    workout: patch.workout ?? false,
+  });
+
+  useEffect(() => {
+    const onPop = (event: PopStateEvent) => {
+      const snap = event.state as NavSnap | null;
+      if (!snap?.titan) return;
+      setActiveCategory(snap.category);
+      setActiveSubView(snap.view);
+      setSettingsOpen(Boolean(snap.settings));
+      setOpenExerciseId(snap.sheet);
+      if (!snap.workout) {
+        setActiveSession(null);
+        setActiveSessionBackupToRestore(null);
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    const base = navState();
+    if (settingsOpen) {
+      history.replaceState({ ...base, settings: false }, '');
+      history.pushState({ ...base, settings: true }, '');
+    } else {
+      history.replaceState(base, '');
+    }
+    return () => window.removeEventListener('popstate', onPop);
+    // History root is captured once so the first Android Back stays inside the app.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!userState.profile.onboarded || !pendingAction.current) return;
+    const action = pendingAction.current;
+    pendingAction.current = null;
+    const session = buildSessionForAction(action, userState, new Date(), morningNoMatMode);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('action');
+    const nextUrl = `${url.pathname}${url.search}`;
+    if (!session) {
+      history.replaceState(history.state, '', nextUrl);
+      return;
+    }
+    setActiveCategory(session.category);
+    setActiveSubView('today');
+    setActiveSession({
+      title: session.title,
+      category: session.category,
+      exercises: session.exercises,
+      slotIdToComplete: session.slotIdToComplete,
+    });
+    const base: NavSnap = {
+      titan: true,
+      category: session.category,
+      view: 'today',
+      settings: false,
+      sheet: null,
+      workout: false,
+    };
+    history.replaceState(base, '', nextUrl);
+    history.pushState({ ...base, workout: true }, '', nextUrl);
+    // Launch the notification target once, after the profile exists.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userState.profile.onboarded]);
 
   const todayISO = getTodayISO();
 
@@ -305,26 +255,6 @@ export function App() {
     () => generateKettlebellWorkout(userState.selectedKettlebellProgram),
     [userState.selectedKettlebellProgram]
   );
-
-  // Filtered Library Exercises for current tab
-  const filteredLibraryExercises = useMemo(() => {
-    return EXERCISES_DB.filter((ex) => {
-      if (ex.category !== activeCategory) return false;
-      if (selectedEquipment !== 'all' && !ex.equipment.includes(selectedEquipment)) return false;
-      if (showOnlyFavorites && !userState.favoriteExerciseIds.includes(ex.id)) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchTitle =
-          ex.titleRu.toLowerCase().includes(q) ||
-          ex.titleEn.toLowerCase().includes(q) ||
-          ex.subCategory.toLowerCase().includes(q) ||
-          ex.school.toLowerCase().includes(q) ||
-          ex.muscleGroups.some((m) => m.toLowerCase().includes(q));
-        if (!matchTitle) return false;
-      }
-      return true;
-    });
-  }, [activeCategory, selectedEquipment, showOnlyFavorites, searchQuery, userState.favoriteExerciseIds]);
 
   const handleCompleteWorkoutSession = (payload: {
     durationSeconds: number;
@@ -433,7 +363,7 @@ export function App() {
     breaks: {
       title: '2. Перерывы на Работе',
       subtitle: '5–10 минут каждые 90 мин за ПК • Разгон крови, осанка и защита поясницы',
-      badge: 'Офис / Mac • 4 слота в день',
+      badge: `Офис • ${userState.breakSlots.length} слотов в день`,
       gradient: 'from-cyan-500/20 via-sky-500/10 to-transparent',
       accentText: 'text-cyan-400',
       buttonBg: 'from-cyan-400 to-teal-500 text-slate-950',
@@ -456,8 +386,94 @@ export function App() {
     },
   }[activeCategory];
 
+  const openExercise = EXERCISES_DB.find((exercise) => exercise.id === openExerciseId) || null;
+
+  const updateBreakSlot = (slotId: string, patch: { timeLabel?: string; enabled?: boolean }) => {
+    setUserState((prev) => {
+      const breakSlots = prev.breakSlots.map((slot) =>
+        slot.id === slotId ? { ...slot, timeLabel: patch.timeLabel || slot.timeLabel } : slot
+      );
+      const slot = breakSlots.find((item) => item.id === slotId);
+      return {
+        ...prev,
+        breakSlots,
+        reminders: {
+          ...prev.reminders,
+          breakSlotsConfig: {
+            ...prev.reminders.breakSlotsConfig,
+            [slotId]: {
+              enabled: patch.enabled ?? prev.reminders.breakSlotsConfig?.[slotId]?.enabled ?? true,
+              time: slot?.timeLabel || '12:00',
+            },
+          },
+        },
+      };
+    });
+  };
+
+  const addBreakSlot = () => {
+    const id = `slot-custom-${Date.now()}`;
+    setUserState((prev) => ({
+      ...prev,
+      breakSlots: [
+        ...prev.breakSlots,
+        {
+          id,
+          timeLabel: '15:00',
+          title: 'Дополнительный перерыв',
+          focus: 'Короткая разгрузка, которую вы сами поставили в расписание',
+          exerciseIds: ['brk-doorway-pec-opener', 'brk-neck-upper-trap-lateral-stretch', 'brk-dead-hang'],
+          completedDates: [],
+          skippedDates: [],
+        },
+      ],
+      reminders: {
+        ...prev.reminders,
+        breakSlotsConfig: {
+          ...prev.reminders.breakSlotsConfig,
+          [id]: { enabled: true, time: '15:00' },
+        },
+      },
+    }));
+  };
+
+  const removeBreakSlot = (slotId: string) => {
+    if (!slotId.startsWith('slot-custom-')) return;
+    setUserState((prev) => {
+      const breakSlotsConfig = { ...prev.reminders.breakSlotsConfig };
+      delete breakSlotsConfig[slotId];
+      return {
+        ...prev,
+        breakSlots: prev.breakSlots.filter((slot) => slot.id !== slotId),
+        reminders: { ...prev.reminders, breakSlotsConfig },
+      };
+    });
+  };
+
+  if (!userState.profile.onboarded) {
+    return (
+      <OnboardingFlow
+        onComplete={(next) => {
+          setUserState(next);
+          requestPersistentStorage();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#090D16] text-slate-100 pb-28">
+      {needRefresh && (
+        <div className="sticky top-0 z-50 bg-amber-400 text-slate-950 px-4 py-2 flex items-center justify-between gap-3 text-sm font-bold">
+          <span>Доступно обновление Титана</span>
+          <button type="button" className="underline" onClick={() => updateServiceWorker(true)}>
+            Обновить
+          </button>
+          <button type="button" aria-label="Скрыть" onClick={() => setNeedRefresh(false)}>
+            ✕
+          </button>
+        </div>
+      )}
       {/* Top Sticky App Bar */}
       <header className="sticky top-0 z-30 border-b border-slate-800/80 bg-[#090D16]/90 backdrop-blur-xl">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
@@ -468,15 +484,15 @@ export function App() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-black tracking-tight text-white">
-                  TITAN <span className="text-amber-400">110→88</span>
+                  TITAN{' '}
+                  <span className="text-amber-400">
+                    {userState.profile.currentWeightKg || '—'}→{userState.profile.targetWeightKg || '—'}
+                  </span>
                 </h1>
-                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold">
-                  <ShieldCheck className="w-3 h-3" /> Защита спины L4-S1
-                </span>
               </div>
-              <p className="text-[11px] text-slate-400">
-                36 лет • 178 см • Текущий вес:{' '}
-                <strong className="text-white">{userState.profile.currentWeightKg} кг</strong> • Инвентарь: 16/24 кг + Резинки + Коврик
+              <p className="text-xs text-slate-400">
+                {userState.profile.name ? `${userState.profile.name} · ` : ''}
+                {userState.profile.currentWeightKg ? `${userState.profile.currentWeightKg} кг` : 'Профиль не заполнен'}
               </p>
             </div>
           </div>
@@ -485,33 +501,23 @@ export function App() {
             <button
               type="button"
               onClick={triggerTestReminder}
+              aria-label="Проверить напоминание"
               className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-amber-400 transition"
-              title="Проверить напоминание тренера"
             >
               <Bell className="w-4 h-4" />
             </button>
 
             <button
               type="button"
-              onClick={() => setSettingsOpen(true)}
-              className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition ${
-                userState.googleUser
-                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
-                  : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
-              }`}
+              onClick={() => {
+                setSettingsOpen(true);
+                history.pushState(navState({ settings: true }), '');
+              }}
+              aria-label="Открыть настройки"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200"
             >
-              {userState.googleUser ? (
-                <>
-                  <UserCheck className="w-4 h-4 text-emerald-400" />
-                  <span className="hidden sm:inline">{userState.googleUser.email.split('@')[0]}</span>
-                  <span className="sm:hidden">Google ✓</span>
-                </>
-              ) : (
-                <>
-                  <Cloud className="w-4 h-4 text-cyan-400" />
-                  <span>Google Вход & Вес</span>
-                </>
-              )}
+              <Settings className="w-4 h-4 text-amber-300" />
+              <span>Настройки</span>
             </button>
           </div>
         </div>
@@ -538,7 +544,7 @@ export function App() {
 
       {/* Main Content Container */}
       <main className="max-w-5xl mx-auto px-4 pt-4 space-y-5">
-        {/* Pillar Hero Banner & 3 Sub-Branches Selector (Прогресс | Сегодня | Библиотека) */}
+        {activeSubView !== 'library' && (
         <section
           className={`p-5 rounded-3xl bg-gradient-to-br ${pillarMeta.gradient} border border-slate-800/90 space-y-4`}
         >
@@ -554,7 +560,10 @@ export function App() {
 
             <button
               type="button"
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => {
+                setSettingsOpen(true);
+                history.pushState(navState({ settings: true }), '');
+              }}
               className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white"
             >
               <Scale className="w-3.5 h-3.5 text-amber-400" />
@@ -562,58 +571,33 @@ export function App() {
             </button>
           </div>
 
-          {/* 3 Sub-Branches inside each bottom tab as requested: Прогресс | Сегодня | Библиотека */}
-          <div className="grid grid-cols-3 gap-2 p-1.5 rounded-2xl bg-slate-950/90 border border-slate-800">
-            <button
-              type="button"
-              onClick={() => setActiveSubView('progress')}
-              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-extrabold transition ${
-                activeSubView === 'progress'
-                  ? `bg-gradient-to-r ${pillarMeta.buttonBg} shadow-md`
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900'
-              }`}
-            >
-              <BarChart3 className="w-4 h-4 shrink-0" />
-              <span>Прогресс</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveSubView('today')}
-              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-extrabold transition ${
-                activeSubView === 'today'
-                  ? `bg-gradient-to-r ${pillarMeta.buttonBg} shadow-md`
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900'
-              }`}
-            >
-              <Sparkles className="w-4 h-4 shrink-0" />
-              <span>
-                {activeCategory === 'morning'
-                  ? 'Зарядка на сегодня'
-                  : activeCategory === 'breaks'
-                  ? 'Сегодня'
-                  : activeCategory === 'walking'
-                  ? 'Дорожка и Микшер'
-                  : 'Сборник на день'}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveSubView('library')}
-              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-extrabold transition ${
-                activeSubView === 'library'
-                  ? `bg-gradient-to-r ${pillarMeta.buttonBg} shadow-md`
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900'
-              }`}
-            >
-              <BookOpen className="w-4 h-4 shrink-0" />
-              <span>
-                Библиотека ({EXERCISES_DB.filter((e) => e.category === activeCategory).length})
-              </span>
-            </button>
+          <div className="flex gap-1.5 overflow-x-auto">
+            {(
+              [
+                ['morning', 'Зарядка'],
+                ['breaks', 'Перерывы'],
+                ['walking', 'Ходьба'],
+                ['kettlebell', 'Гири'],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  if (id === activeCategory) return;
+                  setActiveCategory(id);
+                  history.pushState(navState({ category: id }), '');
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-extrabold whitespace-nowrap ${
+                  activeCategory === id ? `bg-gradient-to-r ${pillarMeta.buttonBg}` : 'bg-slate-950 text-slate-300 border border-slate-800'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </section>
+        )}
 
         {/* ===================================================================
             SUB-VIEW 1: ПРОГРЕСС (Progress, Streak, Success & Missed Scales)
@@ -934,7 +918,7 @@ export function App() {
                             className="mt-3 w-full py-2.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-extrabold text-xs flex items-center justify-center gap-1.5 transition"
                           >
                             <Play className="w-3.5 h-3.5 fill-current" />
-                            <span>Запустить этот перерыв по таймеру (3 упр.)</span>
+                            <span>Запустить этот перерыв ({slotExercises.length || 3})</span>
                           </button>
                         </div>
                       );
@@ -1159,333 +1143,87 @@ export function App() {
           </div>
         )}
 
-        {/* ===================================================================
-            SUB-VIEW 3: БИБЛИОТЕКА (Complete Exercise Library + Instagram Vault)
-           =================================================================== */}
         {activeSubView === 'library' && (
-          <div className="space-y-5">
-            {/* Search & Equipment Filter Bar */}
-            <div className="p-4 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-3">
-              <div className="flex flex-col sm:flex-row gap-2.5">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Поиск по названию, мышцам, школе (McGill, StrongFirst, махи, поясница)..."
-                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowOnlyFavorites((v) => !v)}
-                  className={`px-4 py-2.5 rounded-2xl border text-xs font-bold transition ${
-                    showOnlyFavorites
-                      ? 'bg-rose-500/20 border-rose-500 text-rose-300'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  ♥ Избранные
-                </button>
-              </div>
-
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0 mr-1" />
-                {(activeCategory === 'morning'
-                  ? [
-                      { id: 'all', label: 'Вся утренняя зарядка' },
-                      { id: 'bodyweight', label: 'Собственный вес (без инвентаря)' },
-                      { id: 'mat', label: 'Коврик для йоги' },
-                      { id: 'bands', label: 'Фитнес-резинка' },
-                    ]
-                  : activeCategory === 'breaks'
-                  ? [
-                      { id: 'all', label: 'Все офисные перерывы' },
-                      { id: 'bodyweight', label: 'Стол / Стул / Стена' },
-                      { id: 'bands', label: 'Фитнес-резинка' },
-                    ]
-                  : activeCategory === 'walking'
-                  ? [
-                      { id: 'all', label: 'Вся ходьба на дорожке' },
-                      { id: 'walking-pad', label: 'Walking Pad' },
-                      { id: 'bands', label: 'С фитнес-резинкой' },
-                    ]
-                  : [
-                      { id: 'all', label: 'Все силовые и гири' },
-                      { id: 'kb16', label: 'Гиря 16 кг' },
-                      { id: 'kb24', label: 'Гиря 24 кг' },
-                      { id: 'bands', label: 'Тяжёлая резина' },
-                      { id: 'bodyweight', label: 'Калистеника / Вес тела' },
-                      { id: 'mat', label: 'Коврик' },
-                    ]
-                ).map((eq) => (
-                  <button
-                    key={eq.id}
-                    type="button"
-                    onClick={() => setSelectedEquipment(eq.id as EquipmentId | 'all')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition ${
-                      selectedEquipment === eq.id
-                        ? 'bg-amber-500 text-slate-950 shadow'
-                        : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {eq.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Kettlebell Library: Switch between 12 Curated Complexes vs All 69 Individual Exercises */}
-            {activeCategory === 'kettlebell' && (
-              <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-950 border border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setKettlebellLibMode('complexes')}
-                  className={`flex-1 py-2 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 ${
-                    kettlebellLibMode === 'complexes'
-                      ? 'bg-rose-500 text-white shadow'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <Dumbbell className="w-3.5 h-3.5" />
-                  <span>12 Готовых Комплексов</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setKettlebellLibMode('exercises')}
-                  className={`flex-1 py-2 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 ${
-                    kettlebellLibMode === 'exercises'
-                      ? 'bg-rose-500 text-white shadow'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>Все упражнения поштучно ({filteredLibraryExercises.length})</span>
-                </button>
-              </div>
-            )}
-
-            {/* View A: 12 Full Training Complexes with step-by-step workouts */}
-            {activeCategory === 'kettlebell' && kettlebellLibMode === 'complexes' && (
-              <div className="space-y-4">
-                <div className="p-4 rounded-3xl bg-slate-900/90 border border-rose-500/30">
-                  <h3 className="text-sm font-extrabold text-white">
-                    12 Готовых Программ с Гирями и Калистеникой
-                  </h3>
-                  <p className="text-xs text-slate-300 mt-0.5">
-                    Каждый комплекс сбалансирован по мышцам-антагонистам, защищает поясницу и запускается в таймере с паузами.
-                  </p>
-                </div>
-
-                <div className="space-y-3.5">
-                  {KETTLEBELL_COMPLEXES_DB.map((cplx) => (
-                    <div
-                      key={cplx.id}
-                      className="p-5 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-3.5 hover:border-slate-700 transition"
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[11px] font-extrabold">
-                              Комплекс #{cplx.number}
-                            </span>
-                            <span className="text-xs text-slate-400 font-semibold">
-                              {cplx.rounds} раунда • отдых {cplx.restBetweenRoundsSeconds} сек
-                            </span>
-                          </div>
-                          <h4 className="text-base font-extrabold text-white mt-1">
-                            {cplx.title}
-                          </h4>
-                          <p className="text-xs text-amber-300/90 mt-0.5 font-medium">
-                            Фокус: {cplx.focus}
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const cplxExercises = cplx.exercises
-                              .map((item) => EXERCISES_DB.find((e) => e.id === item.exerciseId))
-                              .filter((e): e is Exercise => Boolean(e));
-                            setActiveSession({
-                              title: cplx.title,
-                              category: 'kettlebell',
-                              exercises: cplxExercises.length > 0 ? cplxExercises : [EXERCISES_DB[0]],
-                            });
-                          }}
-                          className="shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-400 hover:to-amber-400 text-white font-extrabold text-xs shadow-lg shadow-rose-500/20 transition"
-                        >
-                          <Play className="w-3.5 h-3.5 fill-current" />
-                          <span>Запустить тренировку по комплексу</span>
-                        </button>
-                      </div>
-
-                      <p className="text-xs text-slate-300 leading-relaxed">
-                        {cplx.description}
-                      </p>
-
-                      {/* Exercises inside complex */}
-                      <div className="space-y-2 pt-2 border-t border-slate-800">
-                        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                          Упражнения в одном раунде:
-                        </div>
-                        <div className="grid sm:grid-cols-3 gap-2">
-                          {cplx.exercises.map((item, i) => (
-                            <div
-                              key={item.exerciseId + i}
-                              className="p-3 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-1"
-                            >
-                              <div className="flex items-center justify-between text-xs font-bold text-white">
-                                <span>{i + 1}. {item.titleRu}</span>
-                              </div>
-                              <div className="text-[11px] text-amber-400 font-semibold">{item.reps}</div>
-                              <div className="text-[10px] text-slate-400 leading-snug">{item.coachTip}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* View B: Individual Exercise Cards List (for Morning, Breaks, or Kettlebell Single mode) */}
-            {(activeCategory !== 'kettlebell' || kettlebellLibMode === 'exercises') && (
-              filteredLibraryExercises.length > 0 ? (
-                <div className="space-y-3">
-                  {filteredLibraryExercises.map((ex, idx) => (
-                    <ExerciseDetailCard
-                      key={ex.id}
-                      exercise={ex}
-                      index={idx}
-                      isFavorite={userState.favoriteExerciseIds.includes(ex.id)}
-                      onStartSingleExercise={(single) =>
-                        setActiveSession({
-                          title: single.titleRu,
-                          category: single.category,
-                          exercises: [single],
-                        })
-                      }
-                      onToggleFavorite={(id) =>
-                        setUserState((prev) => ({
-                          ...prev,
-                          favoriteExerciseIds: prev.favoriteExerciseIds.includes(id)
-                            ? prev.favoriteExerciseIds.filter((f) => f !== id)
-                            : [...prev.favoriteExerciseIds, id],
-                        }))
-                      }
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="p-8 rounded-3xl bg-slate-900/60 border border-slate-800 text-center flex flex-col items-center justify-center space-y-3 my-4">
-                  <div className="w-12 h-12 rounded-2xl bg-slate-800/80 border border-slate-700/80 flex items-center justify-center text-slate-400">
-                    <Search className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-extrabold text-white">Упражнения не найдены</h4>
-                    <p className="text-xs text-slate-400 max-w-sm mt-1">
-                      {searchQuery
-                        ? `По запросу «${searchQuery}» ничего не найдено в текущей категории.`
-                        : 'В выбранной категории нет упражнений с активными фильтрами.'}
-                    </p>
-                  </div>
-                  {(searchQuery || selectedEquipment !== 'all' || showOnlyFavorites) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearchQuery('');
-                        setSelectedEquipment('all');
-                        setShowOnlyFavorites(false);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition shadow-sm"
-                    >
-                      <span>Сбросить все фильтры и поиск</span>
-                    </button>
-                  )}
-                </div>
-              )
-            )}
-          </div>
+          <LibraryBrowser
+            exercises={EXERCISES_DB}
+            category={activeCategory}
+            favoriteIds={userState.favoriteExerciseIds}
+            complexes={KETTLEBELL_COMPLEXES_DB}
+            onCategoryChange={(cat) => {
+              if (cat === activeCategory) return;
+              setActiveCategory(cat);
+              history.pushState(navState({ category: cat, view: 'library' }), '');
+            }}
+            onToggleFavorite={(id) =>
+              setUserState((prev) => ({
+                ...prev,
+                favoriteExerciseIds: prev.favoriteExerciseIds.includes(id)
+                  ? prev.favoriteExerciseIds.filter((f) => f !== id)
+                  : [...prev.favoriteExerciseIds, id],
+              }))
+            }
+            onOpen={(exercise) => {
+              setOpenExerciseId(exercise.id);
+              history.pushState(navState({ view: 'library', sheet: exercise.id }), '');
+            }}
+            onStart={(exercise) => {
+              setActiveSession({
+                title: exercise.titleRu,
+                category: exercise.category,
+                exercises: [exercise],
+              });
+              history.pushState(navState({ workout: true, view: 'library' }), '');
+            }}
+            onStartComplex={(complex) => {
+              const cplxExercises = complex.exercises
+                .map((item) => EXERCISES_DB.find((e) => e.id === item.exerciseId))
+                .filter((e): e is Exercise => Boolean(e));
+              setActiveSession({
+                title: complex.title,
+                category: 'kettlebell',
+                exercises: cplxExercises,
+              });
+              history.pushState(navState({ workout: true }), '');
+            }}
+          />
         )}
       </main>
 
-      {/* Bottom Sticky Navbar: 1. Зарядка | 2. Перерывы | 3. Ходьба | 4. Гири */}
-      <nav
-        aria-label="Главное меню категорий"
-        className="fixed bottom-0 inset-x-0 z-40 border-t border-slate-800/90 bg-[#090D16]/95 backdrop-blur-xl"
-      >
-        <div className="max-w-xl mx-auto px-3 sm:px-4 py-2 grid grid-cols-4 gap-1.5 sm:gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setActiveCategory('morning');
-              setSelectedEquipment('all');
-            }}
-            className={`flex flex-col items-center justify-center py-2 px-1 sm:px-3 rounded-2xl transition ${
-              activeCategory === 'morning'
-                ? 'bg-amber-500/20 border border-amber-500/40 text-amber-300 shadow-lg'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Sun className="w-5 h-5" />
-            <span className="text-xs font-extrabold mt-1">Зарядка</span>
-            <span className="text-[10px] opacity-75">10–20 мин</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setActiveCategory('breaks');
-              setSelectedEquipment('all');
-            }}
-            className={`flex flex-col items-center justify-center py-2 px-1 sm:px-3 rounded-2xl transition ${
-              activeCategory === 'breaks'
-                ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 shadow-lg'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Monitor className="w-5 h-5" />
-            <span className="text-xs font-extrabold mt-1">Перерывы</span>
-            <span className="text-[10px] opacity-75">5–10 мин</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setActiveCategory('walking');
-              setSelectedEquipment('all');
-            }}
-            className={`flex flex-col items-center justify-center py-2 px-1 sm:px-3 rounded-2xl transition ${
-              activeCategory === 'walking'
-                ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 shadow-lg'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Footprints className="w-5 h-5" />
-            <span className="text-xs font-extrabold mt-1">Ходьба</span>
-            <span className="text-[10px] opacity-75">Walking Pad</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setActiveCategory('kettlebell');
-              setSelectedEquipment('all');
-            }}
-            className={`flex flex-col items-center justify-center py-2 px-1 sm:px-3 rounded-2xl transition ${
-              activeCategory === 'kettlebell'
-                ? 'bg-rose-500/20 border border-rose-500/40 text-rose-300 shadow-lg'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Dumbbell className="w-5 h-5" />
-            <span className="text-xs font-extrabold mt-1">Гири</span>
-            <span className="text-[10px] opacity-75">16/24 кг</span>
-          </button>
+      <nav aria-label="Разделы" className="fixed bottom-0 inset-x-0 z-40 border-t border-slate-800/90 bg-[#090D16]/95 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]">
+        <div className="max-w-xl mx-auto px-2 py-2 grid grid-cols-4 gap-1">
+          {(
+            [
+              ['today', 'Сегодня', Sparkles],
+              ['library', 'Библиотека', BookOpen],
+              ['progress', 'Прогресс', BarChart3],
+              ['settings', 'Настройки', Settings],
+            ] as const
+          ).map(([id, label, Icon]) => {
+            const active = id === 'settings' ? settingsOpen : activeSubView === id && !settingsOpen;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  if (id === 'settings') {
+                    setSettingsOpen(true);
+                    history.pushState(navState({ settings: true }), '');
+                    return;
+                  }
+                  if (activeSubView === id && !settingsOpen) return;
+                  setActiveSubView(id);
+                  setSettingsOpen(false);
+                  history.pushState(navState({ view: id, settings: false, sheet: null }), '');
+                }}
+                className={`flex flex-col items-center justify-center py-2 rounded-2xl text-xs font-extrabold ${
+                  active ? 'bg-amber-500/20 text-amber-200 border border-amber-500/40' : 'text-slate-400'
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="mt-1">{label}</span>
+              </button>
+            );
+          })}
         </div>
       </nav>
 
@@ -1558,6 +1296,11 @@ export function App() {
             }))
           }
           onClose={() => {
+            const state = history.state as NavSnap | null;
+            if (state?.workout) {
+              history.back();
+              return;
+            }
             setActiveSession(null);
             setActiveSessionBackupToRestore(null);
           }}
@@ -1565,6 +1308,7 @@ export function App() {
             handleCompleteWorkoutSession(payload);
             setActiveSession(null);
             setActiveSessionBackupToRestore(null);
+            history.replaceState(navState({ view: 'progress', workout: false, sheet: null, settings: false }), '');
             try {
               localStorage.removeItem(ACTIVE_BACKUP_STORAGE_KEY);
             } catch {
@@ -1574,14 +1318,50 @@ export function App() {
         />
       )}
 
-      {/* Account (Google Sync), Weight Tracker, Reminders & APK Modal */}
+      {openExercise && (
+        <ExerciseDetailSheet
+          exercise={openExercise}
+          isFavorite={userState.favoriteExerciseIds.includes(openExercise.id)}
+          onClose={() => {
+            const state = history.state as NavSnap | null;
+            if (state?.sheet) {
+              history.back();
+              return;
+            }
+            setOpenExerciseId(null);
+          }}
+          onStart={(exercise) => {
+            setOpenExerciseId(null);
+            setActiveSession({
+              title: exercise.titleRu,
+              category: exercise.category,
+              exercises: [exercise],
+            });
+            history.replaceState(navState({ sheet: null, workout: true }), '');
+          }}
+          onToggleFavorite={(id) =>
+            setUserState((prev) => ({
+              ...prev,
+              favoriteExerciseIds: prev.favoriteExerciseIds.includes(id)
+                ? prev.favoriteExerciseIds.filter((item) => item !== id)
+                : [...prev.favoriteExerciseIds, id],
+            }))
+          }
+        />
+      )}
+
+      {/* Settings, weight and reminders */}
       {settingsOpen && (
         <AccountAndSettingsModal
           userState={userState}
-          onClose={() => setSettingsOpen(false)}
-          onConnectGoogle={(googleProfile) =>
-            setUserState((prev) => ({ ...prev, googleUser: googleProfile }))
-          }
+          onClose={() => {
+            const state = history.state as NavSnap | null;
+            if (state?.settings) {
+              history.back();
+              return;
+            }
+            setSettingsOpen(false);
+          }}
           onDisconnectGoogle={() =>
             setUserState((prev) => ({ ...prev, googleUser: null }))
           }
@@ -1598,7 +1378,10 @@ export function App() {
           onUpdateReminders={(reminders) =>
             setUserState((prev) => ({ ...prev, reminders }))
           }
-          onImportState={(imported) => setUserState(imported)}
+          onUpdateBreakSlot={updateBreakSlot}
+          onAddBreakSlot={addBreakSlot}
+          onRemoveBreakSlot={removeBreakSlot}
+          onImportState={(imported) => setUserState(migrateUserState(imported))}
           onTriggerTestNotification={triggerTestReminder}
         />
       )}

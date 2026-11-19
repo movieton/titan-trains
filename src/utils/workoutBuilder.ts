@@ -32,42 +32,86 @@ export function getTodayISO(): string {
   return `${y}-${m}-${d}`;
 }
 
+export const MORNING_NO_MAT_IDS = [
+  'morn-palm-rub-face-neck-warm',
+  'morn-physiological-sigh-huberman',
+  'morn-neck-cars',
+  'morn-shoulder-cars',
+  'morn-wrist-elbow-cars-standing',
+  'morn-crescent-side-stretch-standing',
+  'morn-daoyin-meridian-patting',
+  'morn-standing-pelvic-hula-warmup',
+  'morn-soviet-radio-gym-chest-expand',
+  'morn-toe-yoga-intrinsic-foot',
+  'morn-lymph-calf-tibialis-pump',
+];
+
+export const MORNING_PHASE1_IDS = [
+  'morn-pandiculation-full-body-stretch',
+  'morn-diaphragm-rib-breath',
+  'morn-pelvic-clock-tilts',
+  'morn-book-openers-mat',
+  'morn-tibetan-hormonal-lymph-rub',
+];
+
+export const MORNING_PHASE2_IDS = [
+  'morn-cat-cow-segmental',
+  'morn-thread-the-needle',
+  'morn-quadruped-rockbacks',
+  'morn-90-90-hip-switches',
+  'morn-child-pose-lat-walk',
+];
+
+export const MORNING_PHASE3_IDS = [
+  'morn-palm-rub-face-neck-warm',
+  'morn-neck-cars',
+  'morn-shoulder-cars',
+  'morn-crescent-side-stretch-standing',
+  'morn-daoyin-meridian-patting',
+  'morn-standing-pelvic-hula-warmup',
+  'morn-lymph-calf-tibialis-pump',
+];
+
+const MORNING_CALF_ID = 'morn-lymph-calf-tibialis-pump';
+
+export function morningPlanIds(durationMinutes: 10 | 15 | 20, noMatMode = false): string[] {
+  if (noMatMode) {
+    const targetCount = durationMinutes === 10 ? 6 : durationMinutes === 15 ? 9 : 11;
+    const selected = MORNING_NO_MAT_IDS.slice(0, targetCount).filter((id) => id !== MORNING_CALF_ID);
+    selected.push(MORNING_CALF_ID);
+    return selected;
+  }
+
+  const selectedIds: string[] = [];
+  if (durationMinutes === 10) {
+    selectedIds.push(MORNING_PHASE1_IDS[0], MORNING_PHASE1_IDS[1]);
+    selectedIds.push(MORNING_PHASE2_IDS[0], MORNING_PHASE2_IDS[1], MORNING_PHASE2_IDS[3]);
+    selectedIds.push(MORNING_PHASE3_IDS[5], MORNING_PHASE3_IDS[6]);
+  } else if (durationMinutes === 15) {
+    selectedIds.push(MORNING_PHASE1_IDS[0], MORNING_PHASE1_IDS[1], MORNING_PHASE1_IDS[2], MORNING_PHASE1_IDS[3]);
+    selectedIds.push(MORNING_PHASE2_IDS[0], MORNING_PHASE2_IDS[1], MORNING_PHASE2_IDS[2], MORNING_PHASE2_IDS[3]);
+    selectedIds.push(MORNING_PHASE3_IDS[0], MORNING_PHASE3_IDS[1], MORNING_PHASE3_IDS[5], MORNING_PHASE3_IDS[6]);
+  } else {
+    selectedIds.push(...MORNING_PHASE1_IDS, ...MORNING_PHASE2_IDS, ...MORNING_PHASE3_IDS);
+  }
+  const filteredIds = selectedIds.filter((id) => id !== MORNING_CALF_ID);
+  filteredIds.push(MORNING_CALF_ID);
+  return filteredIds;
+}
+
 export function generateMorningWorkout(
   durationMinutes: 10 | 15 | 20,
   daySeed = getDayOfYearIndex(),
   noMatMode = false
 ): GeneratedWorkoutPlan {
   const morningPool = EXERCISES_DB.filter((e) => e.category === 'morning');
+  const finalIds = morningPlanIds(durationMinutes, noMatMode);
+  const exercises = finalIds
+    .map((id) => morningPool.find((e) => e.id === id))
+    .filter((e): e is Exercise => Boolean(e));
+  const totalKcal = exercises.reduce((acc, e) => acc + e.kcalEstimate, 0);
 
   if (noMatMode) {
-    // 100% Standing & Seated at bed/chair awakening pool (Zero Mat Required)
-    const standingAwakeningIds = [
-      'morn-palm-rub-face-neck-warm',
-      'morn-physiological-sigh-huberman',
-      'morn-neck-cars',
-      'morn-shoulder-cars',
-      'morn-wrist-elbow-cars-standing',
-      'morn-crescent-side-stretch-standing',
-      'morn-daoyin-meridian-patting',
-      'morn-standing-pelvic-hula-warmup',
-      'morn-soviet-radio-gym-chest-expand',
-      'morn-toe-yoga-intrinsic-foot',
-      'morn-lymph-calf-tibialis-pump', // strictly last
-    ];
-
-    const targetCount = durationMinutes === 10 ? 6 : durationMinutes === 15 ? 9 : 11;
-    const selected = standingAwakeningIds.slice(0, targetCount);
-    // ensure calf pump is always last
-    const calfId = 'morn-lymph-calf-tibialis-pump';
-    const finalIds = selected.filter((id) => id !== calfId);
-    finalIds.push(calfId);
-
-    const exercises = finalIds
-      .map((id) => morningPool.find((e) => e.id === id))
-      .filter((e): e is Exercise => Boolean(e));
-
-    const totalKcal = exercises.reduce((acc, e) => acc + e.kcalEstimate, 0);
-
     return {
       id: `morning-nomat-${durationMinutes}-${daySeed}`,
       category: 'morning',
@@ -80,80 +124,6 @@ export function generateMorningWorkout(
       exercises,
     };
   }
-
-  // Phase 1 (Lying on back/side — awakening CNS & pelvis)
-  const phase1LyingIds = [
-    'morn-pandiculation-full-body-stretch',
-    'morn-diaphragm-rib-breath',
-    'morn-pelvic-clock-tilts',
-    'morn-book-openers-mat',
-    'morn-tibetan-hormonal-lymph-rub',
-  ];
-
-  // Phase 2 (Quadruped / seated — spine & hip mobility)
-  const phase2QuadrupedIds = [
-    'morn-cat-cow-segmental',
-    'morn-thread-the-needle',
-    'morn-quadruped-rockbacks',
-    'morn-90-90-hip-switches',
-    'morn-child-pose-lat-walk',
-  ];
-
-  // Phase 3 (Standing — CARs, rib opening, lymphatic drainage)
-  const phase3StandingIds = [
-    'morn-palm-rub-face-neck-warm',
-    'morn-neck-cars',
-    'morn-shoulder-cars',
-    'morn-crescent-side-stretch-standing',
-    'morn-daoyin-meridian-patting',
-    'morn-standing-pelvic-hula-warmup',
-    'morn-lymph-calf-tibialis-pump', // Always last!
-  ];
-
-  const selectedIds: string[] = [];
-
-  if (durationMinutes === 10) {
-    // 7 exercises: 2 lying -> 3 quadruped/seated -> 2 standing
-    selectedIds.push(phase1LyingIds[0], phase1LyingIds[1]);
-    selectedIds.push(phase2QuadrupedIds[0], phase2QuadrupedIds[1], phase2QuadrupedIds[3]);
-    selectedIds.push(phase3StandingIds[5], phase3StandingIds[6]);
-  } else if (durationMinutes === 15) {
-    // 11 exercises: 4 lying -> 4 quadruped/seated -> 3 standing
-    selectedIds.push(
-      phase1LyingIds[0],
-      phase1LyingIds[1],
-      phase1LyingIds[2],
-      phase1LyingIds[3]
-    );
-    selectedIds.push(
-      phase2QuadrupedIds[0],
-      phase2QuadrupedIds[1],
-      phase2QuadrupedIds[2],
-      phase2QuadrupedIds[3]
-    );
-    selectedIds.push(
-      phase3StandingIds[0],
-      phase3StandingIds[1],
-      phase3StandingIds[5],
-      phase3StandingIds[6]
-    );
-  } else {
-    // 20 minutes: all 17 exercises in strict 3-phase flow
-    selectedIds.push(...phase1LyingIds);
-    selectedIds.push(...phase2QuadrupedIds);
-    selectedIds.push(...phase3StandingIds);
-  }
-
-  // Ensure strictly that the lymphatic calf pump is the final exercise
-  const calfId = 'morn-lymph-calf-tibialis-pump';
-  const filteredIds = selectedIds.filter((id) => id !== calfId);
-  filteredIds.push(calfId);
-
-  const exercises = filteredIds
-    .map((id) => morningPool.find((e) => e.id === id))
-    .filter((e): e is Exercise => Boolean(e));
-
-  const totalKcal = exercises.reduce((acc, e) => acc + e.kcalEstimate, 0);
 
   return {
     id: `morning-${durationMinutes}-${daySeed}`,
@@ -168,40 +138,63 @@ export function generateMorningWorkout(
   };
 }
 
+export const DEFAULT_MORNING_TIME = '09:30';
+export const DEFAULT_EVENING_TIME = '20:00';
+
+/** Previous built-in clock values. Migration replaces only these, not a time the user typed. */
+export const LEGACY_MORNING_TIMES = ['08:00', '08:30'];
+export const LEGACY_EVENING_TIMES = ['19:00', '19:30'];
+
+export const LEGACY_BREAK_SLOT_MAP: Record<string, { nextId: string; legacyTime: string }> = {
+  'slot-1100': { nextId: 'slot-1130', legacyTime: '11:00' },
+  'slot-1330': { nextId: 'slot-1300', legacyTime: '13:30' },
+  'slot-1600': { nextId: 'slot-1600', legacyTime: '16:00' },
+  'slot-1800': { nextId: 'slot-1730', legacyTime: '18:00' },
+};
+
 export function getDefaultBreakSlots(): DailyBreakSlot[] {
   return [
     {
-      id: 'slot-1100',
-      timeLabel: '11:00',
-      title: 'Потягивание в кресле + Разгрузка Шеи и Трапеции #1',
-      focus: 'Офисное потягивание в замке, мягкая растяжка верхней трапеции и раскрытие груди',
+      id: 'slot-1130',
+      timeLabel: '11:30',
+      title: 'Шея, глаза и раскрытие груди',
+      focus: 'Потягивание в замке, мягкая шея и грудной отдел после первого блока за столом',
       exerciseIds: ['brk-seated-overhead-interlace-reach', 'brk-neck-upper-trap-lateral-stretch', 'brk-doorway-pec-opener'],
       completedDates: [],
       skippedDates: [],
     },
     {
-      id: 'slot-1330',
-      timeLabel: '13:30',
-      title: 'Разогрев Поясницы + Растяжка Таза «Цифра 4» #2',
-      focus: 'Термическое растирание крестца ладонями, растяжка ягодиц на стуле и фейс-пул с резинкой',
+      id: 'slot-1300',
+      timeLabel: '13:00',
+      title: 'Таз и осанка после обеда',
+      focus: 'Крестец, ягодицы на стуле и фейс-пул, чтобы не застыть в кресле',
       exerciseIds: ['brk-standing-sacrum-friction-rub', 'brk-seated-piriformis-figure4-stretch', 'brk-band-face-pull'],
+      completedDates: [],
+      skippedDates: [],
+    },
+    {
+      id: 'slot-1430',
+      timeLabel: '14:30',
+      title: 'Вис и австралийская тяга',
+      focus: 'Короткий вис и горизонтальная тяга своим весом, без силовых негативов в каждый перерыв',
+      exerciseIds: ['brk-dead-hang', 'brk-australian-row', 'brk-doorway-pec-opener'],
       completedDates: [],
       skippedDates: [],
     },
     {
       id: 'slot-1600',
       timeLabel: '16:00',
-      title: 'Тяга Резинки + Отжимания от стола #3',
-      focus: 'Активация широчайших мышц, осанки и метаболический разгон наклонными отжиманиями',
+      title: 'Тяга резинки и отжимания от стола',
+      focus: 'Широчайшие на резинке и тонус груди без провала поясницы',
       exerciseIds: ['brk-band-row-pulldown', 'brk-incline-desk-pushups', 'brk-seated-overhead-interlace-reach'],
       completedDates: [],
       skippedDates: [],
     },
     {
-      id: 'slot-1800',
-      timeLabel: '18:00',
-      title: 'Вечернее Раскрытие Грудного Отдела и Шеи #4',
-      focus: 'Снимаем осевую усталость позвоночника, прогреваем крестец и раскрываем грудь',
+      id: 'slot-1730',
+      timeLabel: '17:30',
+      title: 'Вечернее раскрытие груди и шеи',
+      focus: 'Снимаем усталость грудного отдела и шеи перед концом рабочего дня',
       exerciseIds: ['brk-doorway-pec-opener', 'brk-standing-sacrum-friction-rub', 'brk-neck-upper-trap-lateral-stretch'],
       completedDates: [],
       skippedDates: [],
@@ -209,17 +202,21 @@ export function getDefaultBreakSlots(): DailyBreakSlot[] {
   ];
 }
 
+export const BREAK_PRIORITY_IDS = [
+  'brk-seated-overhead-interlace-reach',
+  'brk-neck-upper-trap-lateral-stretch',
+  'brk-doorway-pec-opener',
+  'brk-standing-sacrum-friction-rub',
+  'brk-seated-piriformis-figure4-stretch',
+  'brk-incline-desk-pushups',
+  'brk-band-face-pull',
+  'brk-band-row-pulldown',
+  'brk-dead-hang',
+  'brk-australian-row',
+];
+
 export function generateBreakWorkout(durationMinutes: 5 | 7 | 10, slotIndex = 0): GeneratedWorkoutPlan {
-  const priorityPhotoIds = [
-    'brk-seated-overhead-interlace-reach',
-    'brk-neck-upper-trap-lateral-stretch',
-    'brk-doorway-pec-opener',
-    'brk-standing-sacrum-friction-rub',
-    'brk-seated-piriformis-figure4-stretch',
-    'brk-incline-desk-pushups',
-    'brk-band-face-pull',
-    'brk-band-row-pulldown',
-  ];
+  const priorityPhotoIds = BREAK_PRIORITY_IDS;
 
   const pool = priorityPhotoIds
     .map((id) => EXERCISES_DB.find((e) => e.id === id))
@@ -330,11 +327,47 @@ export const KETTLEBELL_WEEKLY_SCHEDULE = [
   },
 ];
 
+export const KETTLEBELL_PROGRAM_IDS: Record<
+  'foundation-16' | 'power-24' | 'fatburn-flow' | 'spine-armor',
+  string[]
+> = {
+  'foundation-16': [
+    'kb-halo-16',
+    'kb-sumo-deadlift-24',
+    'kb-goblet-squat-16-24',
+    'kb-gorilla-row',
+    'kb-half-kneeling-press',
+    'kb-suitcase-carry',
+  ],
+  'power-24': [
+    'kb-halo-16',
+    'kb-sumo-deadlift-24',
+    'kb-rdl-24',
+    'kb-floor-press',
+    'kb-gorilla-row',
+    'kb-farmers-offset-walk',
+  ],
+  'fatburn-flow': [
+    'kb-halo-16',
+    'kb-swing-2h',
+    'kb-clean-squat-press-flow',
+    'kb-around-world',
+    'kb-calisthenics-band-row-superset',
+    'kb-deadbug-pullover',
+  ],
+  'spine-armor': [
+    'kb-halo-16',
+    'kb-tgu-16',
+    'kb-floor-press',
+    'kb-deadbug-pullover',
+    'kb-calisthenics-band-row-superset',
+    'kb-suitcase-carry',
+  ],
+};
+
 export function generateKettlebellWorkout(
   program: 'foundation-16' | 'power-24' | 'fatburn-flow' | 'spine-armor'
 ): GeneratedWorkoutPlan {
-  const kbPool = EXERCISES_DB.filter((e) => e.category === 'kettlebell');
-
   const programMap: Record<
     typeof program,
     {
@@ -351,14 +384,7 @@ export function generateKettlebellWorkout(
       coachFocus:
         'Начинаем с мобилизации плеч «Нимб 16 кг», затем включаем ягодицы и спину в становой тяге 24 кг, строим ноги в Кубковом приседе и укрепляем кор в проходке Чемодан.',
       minutes: 25,
-      ids: [
-        'kb-halo-16',
-        'kb-sumo-deadlift-24',
-        'kb-goblet-squat-16-24',
-        'kb-gorilla-row',
-        'kb-half-kneeling-press',
-        'kb-suitcase-carry',
-      ],
+      ids: KETTLEBELL_PROGRAM_IDS['foundation-16'],
     },
     'power-24': {
       title: 'Протокол Б: Тяжёлая Броня (Акцент 24 кг + Оффсет 16+24 кг)',
@@ -366,14 +392,7 @@ export function generateKettlebellWorkout(
       coachFocus:
         'Используем вашу гирю 24 кг в самых безопасных рычагах: тяга между стоп, румынская тяга, жим лёжа на коврике и легендарная асимметричная прогулка фермера 16+24 кг.',
       minutes: 30,
-      ids: [
-        'kb-halo-16',
-        'kb-sumo-deadlift-24',
-        'kb-rdl-24',
-        'kb-floor-press',
-        'kb-gorilla-row',
-        'kb-farmers-offset-walk',
-      ],
+      ids: KETTLEBELL_PROGRAM_IDS['power-24'],
     },
     'fatburn-flow': {
       title: 'Протокол В: Метаболический Шторм & Instagram Flows (16 кг)',
@@ -381,14 +400,7 @@ export function generateKettlebellWorkout(
       coachFocus:
         'Максимальный расход калорий и гормональный отклик без единого прыжка: двуручные махи, атлетический флоу Clean-Squat-Press, вращения вокруг корпуса и суперсет с резинкой.',
       minutes: 28,
-      ids: [
-        'kb-halo-16',
-        'kb-swing-2h',
-        'kb-clean-squat-press-flow',
-        'kb-around-world',
-        'kb-calisthenics-band-row-superset',
-        'kb-deadbug-pullover',
-      ],
+      ids: KETTLEBELL_PROGRAM_IDS['fatburn-flow'],
     },
     'spine-armor': {
       title: 'Протокол Г: Железный Кор, Калистеника и Защита Поясницы',
@@ -396,20 +408,13 @@ export function generateKettlebellWorkout(
       coachFocus:
         'Идеально для дней, когда спина устала после работы: упражнения лёжа на коврике, с одного колена и анти-ротационные удержания.',
       minutes: 22,
-      ids: [
-        'kb-halo-16',
-        'kb-tgu-16',
-        'kb-floor-press',
-        'kb-deadbug-pullover',
-        'kb-calisthenics-band-row-superset',
-        'kb-suitcase-carry',
-      ],
+      ids: KETTLEBELL_PROGRAM_IDS['spine-armor'],
     },
   };
 
   const config = programMap[program];
   const exercises = config.ids
-    .map((id) => kbPool.find((e) => e.id === id))
+    .map((id) => EXERCISES_DB.find((e) => e.id === id))
     .filter((e): e is Exercise => Boolean(e));
 
   const totalKcal = exercises.reduce((acc, e) => acc + e.kcalEstimate * e.defaultSets, 0);

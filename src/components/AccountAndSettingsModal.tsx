@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GoogleUserProfile, ReminderSettings, UserState } from '../types/fitness';
+import { ReminderSettings, UserState } from '../types/fitness';
 import {
   X,
   Cloud,
@@ -24,10 +24,12 @@ import {
 interface AccountAndSettingsModalProps {
   userState: UserState;
   onClose: () => void;
-  onConnectGoogle: (profile: GoogleUserProfile) => void;
   onDisconnectGoogle: () => void;
   onUpdateWeight: (newWeightKg: number) => void;
   onUpdateReminders: (reminders: ReminderSettings) => void;
+  onUpdateBreakSlot: (slotId: string, patch: { timeLabel?: string; enabled?: boolean }) => void;
+  onAddBreakSlot: () => void;
+  onRemoveBreakSlot: (slotId: string) => void;
   onImportState: (imported: UserState) => void;
   onTriggerTestNotification: () => void;
 }
@@ -35,20 +37,17 @@ interface AccountAndSettingsModalProps {
 export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = ({
   userState,
   onClose,
-  onConnectGoogle,
   onDisconnectGoogle,
   onUpdateWeight,
   onUpdateReminders,
+  onUpdateBreakSlot,
+  onAddBreakSlot,
+  onRemoveBreakSlot,
   onImportState,
   onTriggerTestNotification,
 }) => {
-  const [activeTab, setActiveTab] = useState<'google' | 'reminders' | 'weight' | 'apk'>('google');
-  const [weightInput, setWeightInput] = useState(String(userState.profile.currentWeightKg));
-  const [customEmail, setCustomEmail] = useState('anton.lalo@gmail.com');
-  const [customName, setCustomName] = useState(userState.profile.name || 'Антон (Титан 110→88)');
-  const [googleClientId, setGoogleClientId] = useState(
-    localStorage.getItem('titan_google_client_id') || ''
-  );
+  const [activeTab, setActiveTab] = useState<'google' | 'reminders' | 'weight' | 'apk'>('reminders');
+  const [weightInput, setWeightInput] = useState(String(userState.profile.currentWeightKg || ''));
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   const [permissionStatus, setPermissionStatus] = useState<'granted' | 'denied' | 'default'>(
     getNotificationPermissionStatus()
@@ -58,9 +57,9 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
     const res = await requestNotificationPermission();
     setPermissionStatus(res);
     if (res === 'granted') {
-      setStatusBanner('Push-уведомления успешно разрешены в браузере!');
-      sendSystemNotification('🔥 TITAN Уведомления Активны', {
-        body: 'Расписание тренировок и офисных перерывов будет приходить вовремя.',
+      setStatusBanner('Уведомления разрешены. Они приходят, только пока Титан открыт.');
+      sendSystemNotification('Титан', {
+        body: 'Пока приложение открыто, напоминания в выбранные часы будут показаны.',
       });
     } else {
       setStatusBanner('Разрешение на уведомления отклонено или заблокировано в настройках браузера.');
@@ -94,23 +93,6 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
     userState.profile.currentWeightKg /
     Math.pow(userState.profile.heightCm / 100, 2)
   ).toFixed(1);
-
-  const handleGoogleSignIn = () => {
-    if (googleClientId.trim()) {
-      localStorage.setItem('titan_google_client_id', googleClientId.trim());
-    }
-    const now = new Date().toISOString();
-    onConnectGoogle({
-      uid: 'google-oauth2-' + Math.random().toString(36).substring(2, 10),
-      email: customEmail.trim() || 'anton.lalo@gmail.com',
-      displayName: customName.trim() || 'Антон',
-      photoURL: 'https://api.dicebear.com/7.x/Initialize/svg?seed=Anton',
-      connectedAt: now,
-      lastSyncedAt: now,
-      syncMode: 'google-cloud',
-    });
-    setStatusBanner('Аккаунт Google успешно привязан! Прогресс синхронизирован.');
-  };
 
   const handleExportJSON = () => {
     const blob = new Blob([JSON.stringify(userState, null, 2)], { type: 'application/json' });
@@ -206,14 +188,14 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+    <div id="settings-panel" className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
       <div className="w-full max-w-2xl rounded-3xl bg-[#0D1322] border border-slate-800 shadow-2xl overflow-hidden my-8">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 bg-slate-950/70">
           <div>
-            <h2 className="text-lg font-extrabold text-white">Центр Управления TITAN</h2>
+            <h2 className="text-lg font-extrabold text-white">Настройки</h2>
             <p className="text-xs text-slate-400">
-              Google Аккаунт • Умные Напоминания • Вес 110 кг → 88 кг • PWA & Android APK
+              Напоминания, вес и резервная копия на этом устройстве
             </p>
           </div>
           <button
@@ -228,10 +210,10 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
         {/* Navigation Tabs */}
         <div className="grid grid-cols-4 gap-1 p-2 bg-slate-950/90 border-b border-slate-800 text-xs font-bold">
           {[
-            { id: 'google', label: 'Google Аккаунт', icon: Cloud },
-            { id: 'reminders', label: 'Напоминания', icon: Bell },
-            { id: 'weight', label: 'Профиль 110 кг', icon: Scale },
-            { id: 'apk', label: 'PWA & APK Сборка', icon: Smartphone },
+            { id: 'google', label: 'Данные', icon: Cloud },
+            { id: 'reminders', label: 'Часы', icon: Bell },
+            { id: 'weight', label: 'Профиль', icon: Scale },
+            { id: 'apk', label: 'Сборка', icon: Smartphone },
           ].map((tab) => {
             const Icon = tab.icon;
             return (
@@ -262,97 +244,24 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
         <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
           {activeTab === 'google' && (
             <div className="space-y-4">
-              {userState.googleUser ? (
-                <div className="p-4 rounded-2xl bg-emerald-950/25 border border-emerald-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center text-slate-950 font-black text-lg">
-                      {userState.googleUser.displayName.slice(0, 1).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-extrabold text-white">
-                          {userState.googleUser.displayName}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
-                          Google Sync Активен
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-300">{userState.googleUser.email}</div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">
-                        Последняя синхронизация: только что • ID: {userState.googleUser.uid}
-                      </div>
-                    </div>
-                  </div>
+              <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+                <h3 className="text-sm font-bold text-white">Прогресс хранится только здесь</h3>
+                <p className="text-sm text-slate-300 leading-relaxed">
+                  Входа через Google нет, и облако ничего не синхронизирует. Журнал, вес и расписание лежат в памяти браузера на этом устройстве. Чтобы перенести их, скачайте JSON и загрузите его на другом телефоне.
+                </p>
+              </div>
+              {userState.googleUser && (
+                <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 space-y-3">
+                  <p className="text-sm text-amber-100">
+                    Старая метка «{userState.googleUser.email || userState.googleUser.displayName}» не связана с Google. Синхронизации не было.
+                  </p>
                   <button
                     type="button"
                     onClick={onDisconnectGoogle}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold hover:bg-rose-500/25"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-bold"
                   >
                     <LogOut className="w-3.5 h-3.5" />
-                    <span>Отвязать</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shrink-0">
-                      <span className="font-black text-lg text-slate-900">G</span>
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-white">
-                        Привязка аккаунта через Google (Sign in with Google)
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Синхронизируйте историю утренних зарядок, рабочих перерывов и тренировок с гирями между вашим Mac, веб-доменом и Android APK.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[11px] font-semibold text-slate-400 block mb-1">
-                        Ваше имя в профиле
-                      </label>
-                      <input
-                        type="text"
-                        value={customName}
-                        onChange={(e) => setCustomName(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[11px] font-semibold text-slate-400 block mb-1">
-                        Google Email (Gmail)
-                      </label>
-                      <input
-                        type="email"
-                        value={customEmail}
-                        onChange={(e) => setCustomEmail(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">
-                      Google OAuth Client ID / Firebase Config (опционально для вашего домена)
-                    </label>
-                    <input
-                      type="text"
-                      value={googleClientId}
-                      onChange={(e) => setGoogleClientId(e.target.value)}
-                      placeholder="123456789-xxx.apps.googleusercontent.com (работает сразу в режиме Instant Google Auth)"
-                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleGoogleSignIn}
-                    className="w-full py-3 rounded-xl bg-white hover:bg-slate-100 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg transition"
-                  >
-                    <span className="font-black text-sm text-blue-600">G</span>
-                    <span>Войти и связать аккаунт через Google</span>
+                    Убрать метку
                   </button>
                 </div>
               )}
@@ -369,7 +278,7 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition"
                   >
                     <Download className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Скачать облачный слепок (.JSON)</span>
+                    <span>Скачать резервную копию (.JSON)</span>
                   </button>
                   <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer transition">
                     <Upload className="w-3.5 h-3.5 text-cyan-400" />
@@ -433,7 +342,7 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
                   <div className="flex items-center gap-2">
                     <input
                       type="time"
-                      value={userState.reminders.morningTime || '08:30'}
+                      value={userState.reminders.morningTime || '09:30'}
                       onChange={(e) =>
                         onUpdateReminders({ ...userState.reminders, morningTime: e.target.value })
                       }
@@ -527,69 +436,56 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
                   </div>
                 </div>
 
-                {/* 4 Break Slots Config */}
                 <div className="pt-2 border-t border-slate-800/80 space-y-2">
-                  <div className="text-[11px] font-semibold text-slate-400">Фиксированные слоты перерывов:</div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {[
-                      { id: 'slot-1100', defaultTime: '11:00', label: '1. Шея, глаза и кисти' },
-                      { id: 'slot-1330', defaultTime: '13:30', label: '2. Сосудистый насос и таз' },
-                      { id: 'slot-1600', defaultTime: '16:00', label: '3. Анти-сутулость и грудь' },
-                      { id: 'slot-1800', defaultTime: '18:00', label: '4. Сброс стресса и поясница' },
-                    ].map((slot) => {
+                  <div className="text-xs font-semibold text-slate-300">Время перерывов</div>
+                  <div className="space-y-2">
+                    {userState.breakSlots.map((slot) => {
                       const cfg = userState.reminders.breakSlotsConfig?.[slot.id];
                       const isEnabled = cfg ? cfg.enabled : true;
-                      const slotTime = cfg ? cfg.time : slot.defaultTime;
+                      const slotTime = cfg?.time || slot.timeLabel;
                       return (
                         <div
                           key={slot.id}
-                          className="flex items-center justify-between p-2 rounded-xl bg-slate-950 border border-slate-800/80"
+                          className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-950 border border-slate-800/80"
                         >
-                          <span className="text-[11px] font-medium text-slate-300 truncate max-w-[130px]">
-                            {slot.label}
-                          </span>
-                          <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-medium text-slate-200 min-w-0 truncate">{slot.title}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
                             <input
                               type="time"
+                              aria-label={`Время: ${slot.title}`}
                               value={slotTime}
-                              onChange={(e) => {
-                                const currentSlots = userState.reminders.breakSlotsConfig || {};
-                                onUpdateReminders({
-                                  ...userState.reminders,
-                                  breakSlotsConfig: {
-                                    ...currentSlots,
-                                    [slot.id]: {
-                                      enabled: isEnabled,
-                                      time: e.target.value,
-                                    },
-                                  },
-                                });
-                              }}
-                              className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-[11px] font-mono text-cyan-400"
+                              onChange={(e) => onUpdateBreakSlot(slot.id, { timeLabel: e.target.value, enabled: isEnabled })}
+                              className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-xs font-mono text-cyan-300"
                             />
                             <input
                               type="checkbox"
+                              aria-label={`Включить ${slot.title}`}
                               checked={isEnabled}
-                              onChange={(e) => {
-                                const currentSlots = userState.reminders.breakSlotsConfig || {};
-                                onUpdateReminders({
-                                  ...userState.reminders,
-                                  breakSlotsConfig: {
-                                    ...currentSlots,
-                                    [slot.id]: {
-                                      enabled: e.target.checked,
-                                      time: slotTime,
-                                    },
-                                  },
-                                });
-                              }}
-                              className="w-3.5 h-3.5 rounded text-cyan-500 bg-slate-900 border-slate-700"
+                              onChange={(e) => onUpdateBreakSlot(slot.id, { timeLabel: slotTime, enabled: e.target.checked })}
+                              className="w-4 h-4 rounded text-cyan-500 bg-slate-900 border-slate-700"
                             />
+                            {slot.id.startsWith('slot-custom-') && (
+                              <button
+                                type="button"
+                                onClick={() => onRemoveBreakSlot(slot.id)}
+                                className="text-xs text-slate-400 px-1"
+                                aria-label={`Удалить ${slot.title}`}
+                              >
+                                ✕
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
                     })}
                   </div>
+                  <button
+                    type="button"
+                    onClick={onAddBreakSlot}
+                    className="text-xs font-bold text-cyan-300"
+                  >
+                    Добавить перерыв
+                  </button>
                 </div>
               </div>
 
@@ -606,7 +502,7 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
                   <div className="flex items-center gap-2">
                     <input
                       type="time"
-                      value={userState.reminders.kettlebellTime || '19:00'}
+                      value={userState.reminders.kettlebellTime || '20:00'}
                       onChange={(e) =>
                         onUpdateReminders({ ...userState.reminders, kettlebellTime: e.target.value })
                       }
@@ -711,12 +607,15 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
                 </div>
               </div>
 
-              {/* Action Buttons: Calendar Export + Test Notification */}
+              <div className="p-3 rounded-2xl bg-amber-950/20 border border-amber-500/30 text-sm text-amber-100 leading-relaxed">
+                Браузер показывает напоминание, только пока Титан открыт. Закрытую PWA Android замораживает, и сайт сам не проснётся в 11:30. Надёжный путь при закрытом приложении — файл календаря ниже. Точные уведомления в фоне готовятся в Android-сборке через Capacitor, это описано во вкладке PWA.
+              </div>
+
               <div className="space-y-2 pt-2">
                 <button
                   type="button"
                   onClick={() => {
-                    downloadCalendarICS(userState.reminders);
+                    downloadCalendarICS(userState.reminders, userState.breakSlots);
                     setStatusBanner('Файл titan-workout-schedule.ics скачан! Импортируйте его в Apple/Google Calendar на Mac/iPhone/Android.');
                   }}
                   className="w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-lg"
@@ -744,7 +643,7 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
             <div className="space-y-4">
               <div className="grid sm:grid-cols-3 gap-3">
                 <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800">
-                  <div className="text-xs text-slate-400">Стартовый вес (36 лет, 178 см)</div>
+                  <div className="text-xs text-slate-400">Стартовый вес ({userState.profile.age || '—'} лет, {userState.profile.heightCm || '—'} см)</div>
                   <div className="text-xl font-black text-white mt-0.5">{userState.profile.startWeightKg} кг</div>
                 </div>
                 <div className="p-3.5 rounded-2xl bg-slate-900 border border-emerald-500/40">
@@ -788,7 +687,9 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
               <div className="p-3.5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 flex items-start gap-2.5 text-xs text-emerald-200">
                 <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <div>
-                  <strong>Инвентарь в вашем профиле:</strong> Гиря 16 кг, Гиря 24 кг, Фитнес-резинки, Коврик для йоги. Профиль защиты поясницы (L4-L5-S1) включён по умолчанию.
+                  <strong>Инвентарь:</strong> {userState.profile.equipment.join(', ') || 'не выбран'}.
+                  {userState.profile.goal ? ` Цель: ${userState.profile.goal}.` : ''} Защита поясницы{' '}
+                  {userState.profile.lowerBackGuard ? 'включена' : 'выключена'}.
                 </div>
               </div>
             </div>
@@ -811,11 +712,11 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
                   <ExternalLink className="w-4 h-4 text-cyan-400" />
                   <span>2. Сборка нативного Android `.APK` (после тестирований)</span>
                 </h4>
-                <p className="text-slate-400 leading-relaxed">
-                  Проект полностью совместим с <strong>Capacitor Android</strong> и <strong>PWABuilder</strong>. Когда будете готовы собрать `.APK` для смартфона, достаточно выполнить в папке <code>TRAINS</code>:
+                <p className="text-slate-300 leading-relaxed">
+                  Сайт не умеет будить телефон в заданный час. Для этого нужна оболочка Capacitor и Local Notifications: точные будильники, кнопки «Начать» и «Отложить 10 мин». Код расписания уже лежит в <code>src/utils/nativeReminders.ts</code> и включается только внутри нативного приложения. Шаги сборки — в <code>docs/CAPACITOR_NOTIFICATIONS.md</code>.
                 </p>
                 <pre className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-amber-300 overflow-x-auto">
-                  {`npm run build\nnpx @capacitor/cli init TITAN com.antonlalo.titan --web-dir dist\nnpx cap add android && npx cap open android`}
+                  {`npm install @capacitor/core @capacitor/cli @capacitor/local-notifications @capacitor/android\nnpm run build\nnpx cap add android\nnpx cap sync android`}
                 </pre>
               </div>
             </div>

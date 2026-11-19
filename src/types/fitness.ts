@@ -2,7 +2,11 @@ export type ExerciseCategory = 'morning' | 'breaks' | 'kettlebell' | 'walking';
 
 export type SubView = 'progress' | 'today' | 'library';
 
-export type EquipmentId = 'bodyweight' | 'mat' | 'bands' | 'kb16' | 'kb24' | 'walking-pad';
+export type EquipmentId = 'bodyweight' | 'mat' | 'bands' | 'kb16' | 'kb24' | 'walking-pad' | 'pullup-bar';
+
+export type TrainingGoal = 'tone' | 'fatloss' | 'strength' | 'mobility';
+
+export type ExerciseLevel = 1 | 2 | 3;
 
 export type SpineSafetyLevel =
   | 'decompression' // Разгрузка и вытяжение позвоночника
@@ -48,6 +52,7 @@ export type PoseArchetype =
   | 'kb-around-world'
   | 'kb-complex-flow'
   | 'band-row-pulldown'
+  | 'pull-up'
   | 'walking-steady'
   | 'walking-intervals'
   | 'walking-incline'
@@ -91,6 +96,16 @@ export interface Exercise {
   pose: PoseArchetype;
   videoUrl?: string; // Встроенная демонстрация / ссылка на рилс или YouTube
   instagramRef?: string; // Привязка к подборке Reels пользователя
+  /** 1 начальный, 2 средний, 3 продвинутый. Если пусто — выводится по названию. */
+  level?: ExerciseLevel;
+  /** Паттерн движения для фильтров библиотеки. */
+  pattern?: string;
+  /** Зона тела для фильтров библиотеки. */
+  bodyArea?: string;
+  /** Оценка длительности одного упражнения в минутах. */
+  durationMin?: number;
+  /** Ссылка на источник идеи (не копируется текст). */
+  sourceUrl?: string;
 }
 
 export interface GeneratedWorkoutPlan {
@@ -255,6 +270,9 @@ export interface UserState {
     targetWeightKg: number;
     equipment: EquipmentId[];
     lowerBackGuard: boolean;
+    /** false until the first-run questionnaire is finished. Existing saves are treated as done. */
+    onboarded?: boolean;
+    goal?: TrainingGoal;
   };
   googleUser: GoogleUserProfile | null;
   weightHistory: WeightEntry[];

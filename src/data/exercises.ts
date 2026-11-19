@@ -4,6 +4,7 @@ import { ENCYCLOPEDIA_EXERCISES_DB } from './encyclopediaExercises';
 import { SCALABLE_WORLD_LIBRARY_DB } from './scalableWorldLibrary';
 import { SCALABLE_WORLD_LIBRARY_PART2_DB } from './scalableWorldLibrary2';
 import { WALKING_PROTOCOLS_DB } from './walkingProtocols';
+import { PULLING_EXERCISES } from './pullingExercises';
 
 export interface KettlebellComplexItem {
   exerciseId: string;
@@ -2009,5 +2010,6 @@ export const EXERCISES_DB: Exercise[] = [
   ...ENCYCLOPEDIA_EXERCISES_DB,
   ...SCALABLE_WORLD_LIBRARY_DB,
   ...SCALABLE_WORLD_LIBRARY_PART2_DB,
-  ...WALKING_PROTOCOLS_DB
+  ...WALKING_PROTOCOLS_DB,
+  ...PULLING_EXERCISES,
 ];
