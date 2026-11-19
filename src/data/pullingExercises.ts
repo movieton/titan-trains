@@ -19,7 +19,7 @@ export const PULLING_EXERCISES: Exercise[] = [
     spineSafety: 'mcgill-stabilization',
     spineNote:
       'Тяните локтями, не поясницей. Если резинка заставляет откинуться назад, отойдите ближе к двери и возьмите более слабое натяжение.',
-    imageUrl: '/exercises/band-row-pulldown.jpg',
+    imageUrl: '/exercises/band-row-pulldown.webp',
     description:
       'Короткая тяга резинки стоя: сначала к поясу, чтобы собрать лопатки, затем прямыми руками сверху вниз, чтобы включить широчайшие без турника.',
     quickSteps: [

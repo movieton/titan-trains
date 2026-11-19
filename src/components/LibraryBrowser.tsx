@@ -2,7 +2,9 @@ import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { Exercise, ExerciseCategory, EquipmentId } from '../types/fitness';
 import { KettlebellComplex } from '../data/exercises';
 import { VERIFIED_EXERCISE_PHOTO_MAP } from './BiomechanicalVisualizer';
-import { EQUIPMENT_LABELS, ExerciseFacets, exerciseFacets, matchesExerciseQuery } from '../utils/exerciseMeta';
+import { EQUIPMENT_LABELS, ExerciseFacets, exerciseFacets } from '../utils/exerciseMeta';
+import { exercisePhotoSrc } from '../utils/exercisePhotos';
+import { rankExercises } from '../utils/librarySearch';
 import { Dumbbell, Heart, Play, Search } from 'lucide-react';
 
 interface LibraryBrowserProps {
@@ -48,7 +50,7 @@ function Chip({
 }
 
 function photoFor(exercise: Exercise): string | undefined {
-  return exercise.imageUrl || VERIFIED_EXERCISE_PHOTO_MAP[exercise.id];
+  return exercisePhotoSrc(exercise.imageUrl || VERIFIED_EXERCISE_PHOTO_MAP[exercise.id]);
 }
 
 export function LibraryBrowser({
@@ -92,14 +94,22 @@ export function LibraryBrowser({
     return [...ids];
   }, [scoped]);
 
-  const filtered = scoped.filter(({ exercise, facets }) => {
+  const chipScoped = scoped.filter(({ exercise, facets }) => {
     if (equipment !== 'all' && !exercise.equipment.includes(equipment)) return false;
     if (pattern !== 'all' && facets.pattern !== pattern) return false;
     if (bodyArea !== 'all' && facets.bodyArea !== bodyArea) return false;
     if (level !== 0 && facets.level !== level) return false;
     if (favoritesOnly && !favoriteIds.includes(exercise.id)) return false;
-    return matchesExerciseQuery(exercise, facets, query);
+    return true;
   });
+  const facetsById = new Map(chipScoped.map((item) => [item.exercise.id, item.facets]));
+  const filtered = rankExercises(
+    chipScoped.map((item) => item.exercise),
+    query
+  ).map((exercise) => ({
+    exercise,
+    facets: facetsById.get(exercise.id) || exerciseFacets(exercise),
+  }));
 
   const filtersActive =
     Boolean(query) || equipment !== 'all' || pattern !== 'all' || bodyArea !== 'all' || level !== 0 || favoritesOnly || showAll;
@@ -113,7 +123,7 @@ export function LibraryBrowser({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Поиск: тяга, турник, мах, поясница"
+            placeholder="Поиск: турник, мах, кошка — можно с опечаткой"
             className="w-full pl-9 pr-3 py-2.5 rounded-2xl bg-slate-950 border border-slate-700 text-sm text-white"
           />
         </label>
@@ -296,6 +306,7 @@ function ExerciseRow({
             width={56}
             height={56}
             loading="lazy"
+            decoding="async"
             className="w-14 h-14 rounded-xl object-cover bg-slate-950 shrink-0"
           />
         ) : (

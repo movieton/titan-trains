@@ -11,10 +11,24 @@ precacheAndRoute(self.__WB_MANIFEST);
 
 registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html')));
 
+const IMAGE_CACHE = 'titan-exercise-images-v2';
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((key) => key.startsWith('titan-exercise-images') && key !== IMAGE_CACHE)
+          .map((key) => caches.delete(key))
+      )
+    )
+  );
+});
+
 registerRoute(
   ({ url }) => url.pathname.startsWith('/exercises/'),
   new CacheFirst({
-    cacheName: 'titan-exercise-images',
+    cacheName: IMAGE_CACHE,
     plugins: [
       new ExpirationPlugin({
         maxEntries: 80,

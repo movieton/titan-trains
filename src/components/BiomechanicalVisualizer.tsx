@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { PoseArchetype, ExerciseCategory } from '../types/fitness';
+import { EXERCISE_PHOTO_HEIGHT, EXERCISE_PHOTO_WIDTH, exercisePhotoSrc } from '../utils/exercisePhotos';
 import { ShieldCheck, ZoomIn, X, Activity } from 'lucide-react';
 
 interface BiomechanicalVisualizerProps {
@@ -16,73 +17,73 @@ interface BiomechanicalVisualizerProps {
 // 1:1 fallback mapping in case imageUrl is not populated on the object directly
 export const VERIFIED_EXERCISE_PHOTO_MAP: Record<string, string> = {
   // Morning awakening & mobility exercises
-  'morn-pandiculation-full-body-stretch': '/exercises/pandiculation-stretch.jpg',
-  'morn-palm-rub-face-neck-warm': '/exercises/palm-rub-warmup.jpg',
-  'morn-crescent-side-stretch-standing': '/exercises/crescent-side-stretch.jpg',
-  'morn-daoyin-meridian-patting': '/exercises/daoyin-patting.jpg',
-  'morn-standing-pelvic-hula-warmup': '/exercises/pelvic-hula-circles.jpg',
-  'morn-diaphragm-rib-breath': '/exercises/diaphragm-breath.jpg',
-  'morn-cat-cow-segmental': '/exercises/cat-cow.jpg',
-  'morn-thread-the-needle': '/exercises/thread-the-needle.jpg',
-  'morn-child-pose-lat-walk': '/exercises/child-pose.jpg',
-  'morn-glute-bridge-iso': '/exercises/glute-bridge.jpg',
-  'morn-mcgill-birddog': '/exercises/bird-dog.jpg',
-  'morn-mcgill-curlup': '/exercises/mcgill-curlup.jpg',
-  'morn-mcgill-sidebridge': '/exercises/side-plank.jpg',
-  'morn-dead-bug-core': '/exercises/dead-bug.jpg',
-  'morn-90-90-hip-switches': '/exercises/90-90-hips.jpg',
-  'morn-lymph-calf-tibialis-pump': '/exercises/calf-tibialis-pump.jpg',
-  'morn-band-pull-apart-wakeup': '/exercises/band-pull-apart.jpg',
-  'morn-primal-squat-pry': '/exercises/deep-squat-hold.jpg',
+  'morn-pandiculation-full-body-stretch': '/exercises/pandiculation-stretch.webp',
+  'morn-palm-rub-face-neck-warm': '/exercises/palm-rub-warmup.webp',
+  'morn-crescent-side-stretch-standing': '/exercises/crescent-side-stretch.webp',
+  'morn-daoyin-meridian-patting': '/exercises/daoyin-patting.webp',
+  'morn-standing-pelvic-hula-warmup': '/exercises/pelvic-hula-circles.webp',
+  'morn-diaphragm-rib-breath': '/exercises/diaphragm-breath.webp',
+  'morn-cat-cow-segmental': '/exercises/cat-cow.webp',
+  'morn-thread-the-needle': '/exercises/thread-the-needle.webp',
+  'morn-child-pose-lat-walk': '/exercises/child-pose.webp',
+  'morn-glute-bridge-iso': '/exercises/glute-bridge.webp',
+  'morn-mcgill-birddog': '/exercises/bird-dog.webp',
+  'morn-mcgill-curlup': '/exercises/mcgill-curlup.webp',
+  'morn-mcgill-sidebridge': '/exercises/side-plank.webp',
+  'morn-dead-bug-core': '/exercises/dead-bug.webp',
+  'morn-90-90-hip-switches': '/exercises/90-90-hips.webp',
+  'morn-lymph-calf-tibialis-pump': '/exercises/calf-tibialis-pump.webp',
+  'morn-band-pull-apart-wakeup': '/exercises/band-pull-apart.webp',
+  'morn-primal-squat-pry': '/exercises/deep-squat-hold.webp',
 
   // Workday desk breaks
-  'brk-seated-overhead-interlace-reach': '/exercises/seated-overhead-reach.jpg',
-  'brk-standing-sacrum-friction-rub': '/exercises/sacrum-friction-rub.jpg',
-  'brk-seated-piriformis-figure4-stretch': '/exercises/seated-piriformis-figure4.jpg',
-  'brk-piriformis-figure4': '/exercises/seated-piriformis-figure4.jpg',
-  'brk-neck-upper-trap-lateral-stretch': '/exercises/neck-lateral-stretch.jpg',
-  'brk-incline-desk-pushups': '/exercises/desk-pushup.jpg',
-  'brk-doorway-pec-opener': '/exercises/doorway-pec-stretch.jpg',
-  'brk-band-face-pull': '/exercises/band-face-pull.jpg',
-  'brk-band-row-pulldown': '/exercises/band-row-pulldown.jpg',
-  'band-row-pulldown': '/exercises/band-row-pulldown.jpg',
+  'brk-seated-overhead-interlace-reach': '/exercises/seated-overhead-reach.webp',
+  'brk-standing-sacrum-friction-rub': '/exercises/sacrum-friction-rub.webp',
+  'brk-seated-piriformis-figure4-stretch': '/exercises/seated-piriformis-figure4.webp',
+  'brk-piriformis-figure4': '/exercises/seated-piriformis-figure4.webp',
+  'brk-neck-upper-trap-lateral-stretch': '/exercises/neck-lateral-stretch.webp',
+  'brk-incline-desk-pushups': '/exercises/desk-pushup.webp',
+  'brk-doorway-pec-opener': '/exercises/doorway-pec-stretch.webp',
+  'brk-band-face-pull': '/exercises/band-face-pull.webp',
+  'brk-band-row-pulldown': '/exercises/band-row-pulldown.webp',
+  'band-row-pulldown': '/exercises/band-row-pulldown.webp',
 
   // Kettlebell & Strength complexes
-  'kb-halo-16': '/exercises/kb-halo.jpg',
-  'kb-halo': '/exercises/kb-halo.jpg',
-  'kb-sumo-deadlift-24': '/exercises/kb-deadlift.jpg',
-  'kb-deadlift-sumo': '/exercises/kb-deadlift.jpg',
-  'kb-deadlift': '/exercises/kb-deadlift.jpg',
-  'kb-swing-2h': '/exercises/kb-swing-2h.jpg',
-  'kb-swing-classic': '/exercises/kb-swing-2h.jpg',
-  'kb-goblet-squat-16-24': '/exercises/kb-goblet-squat.jpg',
-  'kb-goblet-squat': '/exercises/kb-goblet-squat.jpg',
-  'kb-gorilla-row': '/exercises/kb-gorilla-row.jpg',
-  'kb-suitcase-carry': '/exercises/kb-suitcase-carry.jpg',
-  'kb-farmers-offset-walk': '/exercises/kb-farmers-walk.jpg',
-  'kb-farmers-walk': '/exercises/kb-farmers-walk.jpg',
-  'kb-half-kneeling-press': '/exercises/kb-half-kneeling-press.jpg',
-  'kb-floor-press': '/exercises/kb-floor-press.jpg',
-  'kb-tgu-16': '/exercises/kb-tgu.jpg',
-  'kb-tgu': '/exercises/kb-tgu.jpg',
-  'kb-romanian-deadlift': '/exercises/kb-deadlift.jpg',
-  'kb-around-world': '/exercises/kb-halo.jpg',
-  'kb-clean-squat-press-flow': '/exercises/kb-goblet-squat.jpg',
-  'kb-deadbug-pullover': '/exercises/dead-bug.jpg',
+  'kb-halo-16': '/exercises/kb-halo.webp',
+  'kb-halo': '/exercises/kb-halo.webp',
+  'kb-sumo-deadlift-24': '/exercises/kb-deadlift.webp',
+  'kb-deadlift-sumo': '/exercises/kb-deadlift.webp',
+  'kb-deadlift': '/exercises/kb-deadlift.webp',
+  'kb-swing-2h': '/exercises/kb-swing-2h.webp',
+  'kb-swing-classic': '/exercises/kb-swing-2h.webp',
+  'kb-goblet-squat-16-24': '/exercises/kb-goblet-squat.webp',
+  'kb-goblet-squat': '/exercises/kb-goblet-squat.webp',
+  'kb-gorilla-row': '/exercises/kb-gorilla-row.webp',
+  'kb-suitcase-carry': '/exercises/kb-suitcase-carry.webp',
+  'kb-farmers-offset-walk': '/exercises/kb-farmers-walk.webp',
+  'kb-farmers-walk': '/exercises/kb-farmers-walk.webp',
+  'kb-half-kneeling-press': '/exercises/kb-half-kneeling-press.webp',
+  'kb-floor-press': '/exercises/kb-floor-press.webp',
+  'kb-tgu-16': '/exercises/kb-tgu.webp',
+  'kb-tgu': '/exercises/kb-tgu.webp',
+  'kb-romanian-deadlift': '/exercises/kb-deadlift.webp',
+  'kb-around-world': '/exercises/kb-halo.webp',
+  'kb-clean-squat-press-flow': '/exercises/kb-goblet-squat.webp',
+  'kb-deadbug-pullover': '/exercises/dead-bug.webp',
 
   // Direct short ID aliases used across complexes
-  'side-plank': '/exercises/side-plank.jpg',
-  'glute-bridge': '/exercises/glute-bridge.jpg',
-  'desk-pushup': '/exercises/desk-pushup.jpg',
-  'dead-bug': '/exercises/dead-bug.jpg',
-  'doorway-pec-stretch': '/exercises/doorway-pec-stretch.jpg',
-  'band-face-pull': '/exercises/band-face-pull.jpg',
-  'mcgill-curlup': '/exercises/mcgill-curlup.jpg',
-  'deep-squat-hold': '/exercises/deep-squat-hold.jpg',
-  'diaphragm-breath': '/exercises/diaphragm-breath.jpg',
-  'bird-dog': '/exercises/bird-dog.jpg',
-  'band-pull-apart': '/exercises/band-pull-apart.jpg',
-  'cat-cow': '/exercises/cat-cow.jpg',
+  'side-plank': '/exercises/side-plank.webp',
+  'glute-bridge': '/exercises/glute-bridge.webp',
+  'desk-pushup': '/exercises/desk-pushup.webp',
+  'dead-bug': '/exercises/dead-bug.webp',
+  'doorway-pec-stretch': '/exercises/doorway-pec-stretch.webp',
+  'band-face-pull': '/exercises/band-face-pull.webp',
+  'mcgill-curlup': '/exercises/mcgill-curlup.webp',
+  'deep-squat-hold': '/exercises/deep-squat-hold.webp',
+  'diaphragm-breath': '/exercises/diaphragm-breath.webp',
+  'bird-dog': '/exercises/bird-dog.webp',
+  'band-pull-apart': '/exercises/band-pull-apart.webp',
+  'cat-cow': '/exercises/cat-cow.webp',
 };
 
 // Helper to check if a specific muscle group is active
@@ -102,9 +103,13 @@ export const BiomechanicalVisualizer: React.FC<BiomechanicalVisualizerProps> = (
   compact = false,
 }) => {
   // 1. Determine verified photo (direct imageUrl prop OR photoMap lookup)
-  const verifiedPhoto = imageUrl || (exerciseId ? VERIFIED_EXERCISE_PHOTO_MAP[exerciseId] : undefined);
-  const hasVerifiedPhoto = Boolean(verifiedPhoto);
+  const verifiedPhoto = exercisePhotoSrc(imageUrl || (exerciseId ? VERIFIED_EXERCISE_PHOTO_MAP[exerciseId] : undefined));
+  const [photoFailed, setPhotoFailed] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
+  useEffect(() => {
+    setPhotoFailed(false);
+  }, [verifiedPhoto]);
+  const hasVerifiedPhoto = Boolean(verifiedPhoto) && !photoFailed;
 
   const categoryBadge =
     category === 'morning'
@@ -151,10 +156,14 @@ export const BiomechanicalVisualizer: React.FC<BiomechanicalVisualizerProps> = (
             <img
               src={verifiedPhoto}
               alt={title}
-              className={`w-full object-cover cursor-pointer hover:scale-[1.01] transition-transform duration-300 ${
+              width={EXERCISE_PHOTO_WIDTH}
+              height={EXERCISE_PHOTO_HEIGHT}
+              decoding="async"
+              className={`w-full h-auto object-cover cursor-pointer hover:scale-[1.01] transition-transform duration-300 ${
                 compact ? 'max-h-[165px] sm:max-h-[210px]' : 'max-h-[230px] sm:max-h-[260px]'
               }`}
               onClick={() => setIsZoomed(true)}
+              onError={() => setPhotoFailed(true)}
               loading="lazy"
             />
 
@@ -336,6 +345,9 @@ export const BiomechanicalVisualizer: React.FC<BiomechanicalVisualizerProps> = (
             <img
               src={verifiedPhoto}
               alt={title}
+              width={EXERCISE_PHOTO_WIDTH}
+              height={EXERCISE_PHOTO_HEIGHT}
+              decoding="async"
               className="w-full h-auto max-h-[75vh] object-contain rounded-xl mt-2"
             />
           </div>
