@@ -4,3 +4,10 @@ dist
 .gitignore
 .DS_Store
 *.log
+.handoff
+deploy
+android
+ios
+.env
+.env.local
+.env.*.local

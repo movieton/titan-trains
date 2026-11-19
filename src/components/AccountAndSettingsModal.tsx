@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { GoogleUserProfile, ReminderSettings, UserState } from '../types/fitness';
+import { APP_CONFIG } from '../config/appConfig';
 import {
   X,
   Cloud,
@@ -47,7 +48,7 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
   const [customEmail, setCustomEmail] = useState('anton.lalo@gmail.com');
   const [customName, setCustomName] = useState(userState.profile.name || 'Антон (Титан 110→88)');
   const [googleClientId, setGoogleClientId] = useState(
-    localStorage.getItem('titan_google_client_id') || ''
+    localStorage.getItem('titan_google_client_id') || APP_CONFIG.googleClientId
   );
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
   const [permissionStatus, setPermissionStatus] = useState<'granted' | 'denied' | 'default'>(
@@ -802,20 +803,20 @@ export const AccountAndSettingsModal: React.FC<AccountAndSettingsModalProps> = (
                   <span>1. Установка PWA в 1 клик (на Android / iPhone / Mac)</span>
                 </h4>
                 <p className="text-slate-400 leading-relaxed">
-                  Приложение уже оснащено <code>manifest.webmanifest</code> и <code>Service Worker</code>. При открытии вашего будущего домена в Chrome на Android нажмите <strong>«Установить приложение»</strong> — оно появится на рабочем столе смартфона без адресной строки браузера.
+                  Приложение оснащено <code>manifest.webmanifest</code> и <code>Service Worker</code>. Откройте <code>{APP_CONFIG.appUrl}</code> в Chrome на Android и нажмите <strong>«Установить приложение»</strong> — оно появится на рабочем столе смартфона без адресной строки браузера.
                 </p>
               </div>
 
               <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
                 <h4 className="text-sm font-extrabold text-white flex items-center gap-2">
                   <ExternalLink className="w-4 h-4 text-cyan-400" />
-                  <span>2. Сборка нативного Android `.APK` (после тестирований)</span>
+                  <span>2. Сборка нативного Android `.APK` (Capacitor)</span>
                 </h4>
                 <p className="text-slate-400 leading-relaxed">
-                  Проект полностью совместим с <strong>Capacitor Android</strong> и <strong>PWABuilder</strong>. Когда будете готовы собрать `.APK` для смартфона, достаточно выполнить в папке <code>TRAINS</code>:
+                  Конфиг <code>capacitor.config.ts</code> уже настроен (<code>androidScheme: https</code>, API-база <code>{APP_CONFIG.apiUrl}</code>). Для сборки `.APK` выполните в папке <code>TRAINS</code>:
                 </p>
                 <pre className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-amber-300 overflow-x-auto">
-                  {`npm run build\nnpx @capacitor/cli init TITAN com.antonlalo.titan --web-dir dist\nnpx cap add android && npx cap open android`}
+                  {`npm run build\nnpx cap sync android\nnpx cap open android`}
                 </pre>
               </div>
             </div>

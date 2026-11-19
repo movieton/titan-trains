@@ -1,8 +1,10 @@
 {
+  "id": "https://titan.luluapp.com/",
   "name": "TITAN — Зарядка, Перерывы и Гири 16/24 кг",
   "short_name": "TITAN Fit",
   "description": "Персональная система трансформации тела: утренняя зарядка, рабочие перерывы за ПК и силовые тренировки с гирями 16/24 кг, резинками и калистеникой",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#090D16",
   "theme_color": "#090D16",

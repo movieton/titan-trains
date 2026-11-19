@@ -1,4 +1,5 @@
 import { ReminderSettings } from '../types/fitness';
+import { APP_CONFIG, APP_DOMAIN } from '../config/appConfig';
 
 export function getNotificationPermissionStatus(): 'granted' | 'denied' | 'default' {
   if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -192,13 +193,14 @@ export function generateCalendarICS(settings: ReminderSettings): string {
     const timeCode = formatIcsTime(settings.morningTime || '08:30');
     ics.push(
       'BEGIN:VEVENT',
-      `UID:titan-morning-${todayDateStr}@lalo-app.com`,
+      `UID:titan-morning-${todayDateStr}@${APP_DOMAIN}`,
       `DTSTAMP:${dtstamp}`,
       `DTSTART:${todayDateStr}${timeCode}`,
       `DURATION:PT15M`,
       `RRULE:FREQ=WEEKLY;BYDAY=${byDays}`,
       'SUMMARY:🌅 Утренняя зарядка TITAN (10-15 мин)',
       'DESCRIPTION:Суставная разминка, декомпрессия позвоночника и лимфодренаж.',
+      `URL;VALUE=URI:${APP_CONFIG.appUrl}/?action=start_morning`,
       'BEGIN:VALARM',
       'TRIGGER:-PT0M',
       'ACTION:DISPLAY',
@@ -228,13 +230,14 @@ export function generateCalendarICS(settings: ReminderSettings): string {
         const timeCode = formatIcsTime(timeStr);
         ics.push(
           'BEGIN:VEVENT',
-          `UID:titan-break-${slot.id}-${idx}@lalo-app.com`,
+          `UID:titan-break-${slot.id}-${idx}@${APP_DOMAIN}`,
           `DTSTAMP:${dtstamp}`,
           `DTSTART:${todayDateStr}${timeCode}`,
           `DURATION:PT5M`,
           `RRULE:FREQ=WEEKLY;BYDAY=${byDays}`,
           `SUMMARY:⚡ ${slot.title}`,
           'DESCRIPTION:Быстрая разминка анти-гиподинамия прямо за столом без коврика.',
+          `URL;VALUE=URI:${APP_CONFIG.appUrl}/?action=start_break`,
           'BEGIN:VALARM',
           'TRIGGER:-PT0M',
           'ACTION:DISPLAY',
@@ -253,13 +256,14 @@ export function generateCalendarICS(settings: ReminderSettings): string {
     const timeCode = formatIcsTime(settings.kettlebellTime || '19:00');
     ics.push(
       'BEGIN:VEVENT',
-      `UID:titan-kettlebell-${todayDateStr}@lalo-app.com`,
+      `UID:titan-kettlebell-${todayDateStr}@${APP_DOMAIN}`,
       `DTSTAMP:${dtstamp}`,
       `DTSTART:${todayDateStr}${timeCode}`,
       `DURATION:PT30M`,
       `RRULE:FREQ=WEEKLY;BYDAY=${byDays}`,
       'SUMMARY:🏋️ Тренировка с Гирями TITAN (16/24 кг)',
       'DESCRIPTION:Силовой фундамент, жиросжигающая баллистика и защита спины по стандарту StrongFirst.',
+      `URL;VALUE=URI:${APP_CONFIG.appUrl}/?action=start_kettlebell`,
       'BEGIN:VALARM',
       'TRIGGER:-PT10M',
       'ACTION:DISPLAY',
@@ -276,13 +280,14 @@ export function generateCalendarICS(settings: ReminderSettings): string {
     const timeCode = formatIcsTime(settings.walkingTime || '14:30');
     ics.push(
       'BEGIN:VEVENT',
-      `UID:titan-walking-${todayDateStr}@lalo-app.com`,
+      `UID:titan-walking-${todayDateStr}@${APP_DOMAIN}`,
       `DTSTAMP:${dtstamp}`,
       `DTSTART:${todayDateStr}${timeCode}`,
       `DURATION:PT20M`,
       `RRULE:FREQ=WEEKLY;BYDAY=${byDays}`,
       'SUMMARY:🚶 Прогулка на Walking Pad TITAN (Зона 2)',
       'DESCRIPTION:Аэробное кардио в Зоне 2, ускорение метаболизма и утилизация глюкозы.',
+      `URL;VALUE=URI:${APP_CONFIG.appUrl}/?action=start_walking`,
       'BEGIN:VALARM',
       'TRIGGER:-PT5M',
       'ACTION:DISPLAY',

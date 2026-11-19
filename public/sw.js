@@ -1,4 +1,4 @@
-const CACHE_NAME = 'titan-fitness-v4';
+const CACHE_NAME = 'titan-fitness-v5';
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -17,6 +17,17 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  const requestUrl = new URL(event.request.url);
+
+  // Never cache or intercept API calls, auth/session endpoints, non-GET requests, or cross-origin requests
+  if (
+    event.request.method !== 'GET' ||
+    requestUrl.origin !== self.location.origin ||
+    requestUrl.pathname.startsWith('/api/')
+  ) {
+    return;
+  }
+
   event.respondWith(
     fetch(event.request).catch(() => caches.match(event.request))
   );
