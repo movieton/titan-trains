@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Exercise, ExerciseCategory, ActiveWorkoutBackup, isExerciseBilateral, getCleanQuickSteps } from '../types/fitness';
+import { canMarkExercise, PAIN_MESSAGE } from '../utils/loadProgression';
 import { BiomechanicalVisualizer } from './BiomechanicalVisualizer';
 import { useWorkoutTimer } from '../hooks/useWorkoutTimer';
 import { soundEngine } from '../utils/soundEngine';
@@ -45,6 +46,10 @@ interface ActiveWorkoutModalProps {
     exercisesTotal: number;
     kcalBurned: number;
     backComfort: 'great' | 'normal' | 'tired';
+    effort?: 1 | 2 | 3 | 4 | 5;
+    pain?: boolean;
+    effortNote?: string;
+    exerciseEfforts?: { exerciseId: string; effort: 1 | 2 | 3 | 4 | 5 }[];
     walkingSteps?: number;
     distanceKm?: number;
   }) => void;
@@ -110,6 +115,9 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
     return match ? parseInt(match[0], 10) : 10;
   });
   const [backComfort, setBackComfort] = useState<'great' | 'normal' | 'tired'>('great');
+  const [pain, setPain] = useState(false);
+  const [effortNote, setEffortNote] = useState('');
+  const [perEffort, setPerEffort] = useState<Record<string, 1 | 2 | 3 | 4 | 5>>({});
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
   const [autoResumeNotice, setAutoResumeNotice] = useState(false);
   const wasRunningBeforeSheetRef = useRef(false);
@@ -766,24 +774,95 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => {
-                onCompleteSession({
-                  durationSeconds: timer.elapsedTotalSeconds,
-                  exercisesCompleted: completedCount,
-                  exercisesTotal: exercises.length,
-                  kcalBurned: totalKcal,
-                  backComfort,
-                  walkingSteps: totalCalculatedSteps > 0 ? totalCalculatedSteps : undefined,
-                  distanceKm: totalCalculatedDistanceKm > 0 ? totalCalculatedDistanceKm : undefined,
-                });
-                onClose();
-              }}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/25 transition cursor-pointer"
-            >
-              Зафиксировать результат в шкалах
-            </button>
+            <div className="space-y-2 text-left">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-bold text-white">Насколько было тяжело?</span>
+                <button
+                  type="button"
+                  aria-pressed={pain}
+                  onClick={() => setPain((value) => !value)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${
+                    pain ? 'bg-rose-500/20 border-rose-400 text-rose-200' : 'bg-slate-950 border-slate-700 text-slate-300'
+                  }`}
+                >
+                  {pain ? 'Боль есть' : 'Без боли'}
+                </button>
+              </div>
+              {pain && <p className="text-xs text-rose-200">{PAIN_MESSAGE}</p>}
+              <p className="text-xs text-slate-400">1 слишком легко · 3 в самый раз · 5 слишком тяжело</p>
+              <div className="grid grid-cols-5 gap-1.5">
+                {([1, 2, 3, 4, 5] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-label={`Оценка ${value}`}
+                    onClick={() => {
+                      onCompleteSession({
+                        durationSeconds: timer.elapsedTotalSeconds,
+                        exercisesCompleted: completedCount,
+                        exercisesTotal: exercises.length,
+                        kcalBurned: totalKcal,
+                        backComfort,
+                        effort: value,
+                        pain,
+                        effortNote: effortNote.trim() || undefined,
+                        exerciseEfforts: Object.entries(perEffort).map(([exerciseId, effort]) => ({ exerciseId, effort })),
+                        walkingSteps: totalCalculatedSteps > 0 ? totalCalculatedSteps : undefined,
+                        distanceKm: totalCalculatedDistanceKm > 0 ? totalCalculatedDistanceKm : undefined,
+                      });
+                      onClose();
+                    }}
+                    className="py-3 rounded-xl bg-amber-400 text-slate-950 font-black text-lg"
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
+              <input
+                value={effortNote}
+                onChange={(event) => setEffortNote(event.target.value.slice(0, 140))}
+                placeholder="Заметка, если нужно"
+                className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-white"
+              />
+              {exercises.some(canMarkExercise) && (
+                <details className="text-xs text-slate-300">
+                  <summary className="cursor-pointer font-bold text-slate-200">По упражнениям, если одно выбилось</summary>
+                  <div className="mt-2 space-y-1.5">
+                    {exercises.filter(canMarkExercise).map((exercise) => (
+                      <div key={exercise.id} className="flex items-center justify-between gap-2">
+                        <span className="truncate">{exercise.titleRu}</span>
+                        <span className="flex gap-1 shrink-0">
+                          {([
+                            [2, 'Легко'],
+                            [5, 'Тяжело'],
+                          ] as const).map(([value, label]) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() =>
+                                setPerEffort((current) => {
+                                  const next = { ...current };
+                                  if (next[exercise.id] === value) delete next[exercise.id];
+                                  else next[exercise.id] = value;
+                                  return next;
+                                })
+                              }
+                              className={`px-2 py-1 rounded-lg border ${
+                                perEffort[exercise.id] === value
+                                  ? 'border-amber-400 text-amber-200'
+                                  : 'border-slate-700 text-slate-400'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </div>
           </div>
         </div>
       )}

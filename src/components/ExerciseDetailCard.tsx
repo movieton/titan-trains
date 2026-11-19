@@ -19,6 +19,7 @@ interface ExerciseDetailCardProps {
   isFavorite?: boolean;
   onStartSingleExercise: (exercise: Exercise) => void;
   onToggleFavorite?: (exerciseId: string) => void;
+  loadHint?: { direction: 'up' | 'same' | 'down'; reason: string; targetLabel: string };
 }
 
 const EQUIPMENT_LABELS: Record<string, string> = {
@@ -37,6 +38,7 @@ export const ExerciseDetailCard: React.FC<ExerciseDetailCardProps> = ({
   isFavorite,
   onStartSingleExercise,
   onToggleFavorite,
+  loadHint,
 }) => {
   const [expanded, setExpanded] = useState(false);
 
@@ -61,6 +63,12 @@ export const ExerciseDetailCard: React.FC<ExerciseDetailCardProps> = ({
               {exercise.titleRu}
             </h3>
             <p className="text-xs text-slate-400 font-medium">{exercise.titleEn}</p>
+            {loadHint && (
+              <p className="text-xs font-bold text-amber-200 pt-1">
+                {loadHint.direction === 'up' ? '↑' : loadHint.direction === 'down' ? '↓' : '='} {loadHint.targetLabel}
+                <span className="font-medium text-slate-300"> · {loadHint.reason}</span>
+              </p>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">

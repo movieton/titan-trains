@@ -1,6 +1,7 @@
 import {
   DailyBreakSlot,
   EquipmentId,
+  LoadRecord,
   ReminderSettings,
   TrainingGoal,
   UserState,
@@ -65,6 +66,7 @@ export function buildFreshUserState(): UserState {
     breakSlots: getDefaultBreakSlots(),
     customMediaLinks: {},
     favoriteExerciseIds: [],
+    loadProgress: {},
     reminders: defaultReminderSettings(),
     selectedDurationMorning: 10,
     selectedDurationBreak: 5,
@@ -171,6 +173,40 @@ function sanitizeEquipment(value: unknown, fallback: EquipmentId[]): EquipmentId
   return picked.length > 0 ? picked : fallback;
 }
 
+function sanitizeLoadProgress(value: unknown): Record<string, LoadRecord> {
+  if (!value || typeof value !== 'object') return {};
+  const out: Record<string, LoadRecord> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!raw || typeof raw !== 'object') continue;
+    const record = raw as Partial<LoadRecord>;
+    if (typeof record.ladderId !== 'string' || typeof record.anchorId !== 'string') continue;
+    const index = Math.max(0, Math.floor(asNumber(record.index, 0)));
+    const ratings = Array.isArray(record.ratings)
+      ? record.ratings
+          .filter((mark) => mark && typeof mark === 'object')
+          .map((mark) => {
+            const effort = Math.round(asNumber((mark as { effort?: unknown }).effort, 3));
+            return {
+              effort: Math.min(5, Math.max(1, effort)) as 1 | 2 | 3 | 4 | 5,
+              pain: Boolean((mark as { pain?: unknown }).pain),
+              at: typeof (mark as { at?: unknown }).at === 'string' ? (mark as { at: string }).at : '',
+            };
+          })
+          .slice(-8)
+      : [];
+    const direction = record.direction === 'up' || record.direction === 'down' ? record.direction : 'same';
+    out[key] = {
+      ladderId: record.ladderId,
+      anchorId: record.anchorId,
+      index,
+      ratings,
+      direction,
+      reason: typeof record.reason === 'string' ? record.reason.slice(0, 180) : '',
+    };
+  }
+  return out;
+}
+
 export function migrateUserState(raw: unknown): UserState {
   const fresh = buildFreshUserState();
   if (!raw || typeof raw !== 'object') return fresh;
@@ -221,6 +257,7 @@ export function migrateUserState(raw: unknown): UserState {
     logs: Array.isArray(data.logs) ? data.logs : [],
     weightHistory: Array.isArray(data.weightHistory) ? data.weightHistory : [],
     favoriteExerciseIds: asStringList(data.favoriteExerciseIds),
+    loadProgress: sanitizeLoadProgress(data.loadProgress),
     customMediaLinks: data.customMediaLinks && typeof data.customMediaLinks === 'object' ? data.customMediaLinks : {},
     breakSlots: mergedSlots.slots,
     reminders,

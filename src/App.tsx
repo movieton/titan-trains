@@ -28,6 +28,7 @@ import { useBreakReminderTimer } from './hooks/useBreakReminderTimer';
 import { checkScheduledReminders } from './utils/notificationScheduler';
 import { buildSessionForAction, parseStartAction } from './utils/deepLink';
 import { loadUserState, migrateUserState, requestPersistentStorage, STORAGE_KEY } from './utils/userState';
+import { adjustExercises, applySessionRatings } from './utils/loadProgression';
 import { syncNativeReminders } from './utils/nativeReminders';
 import {
   Sun,
@@ -221,7 +222,7 @@ export function App() {
     setActiveSession({
       title: session.title,
       category: session.category,
-      exercises: session.exercises,
+      exercises: tune(session.exercises),
       slotIdToComplete: session.slotIdToComplete,
     });
     const base: NavSnap = {
@@ -256,12 +257,30 @@ export function App() {
     [userState.selectedKettlebellProgram]
   );
 
+  const morningRows = useMemo(
+    () => adjustExercises(morningPlan.exercises, userState.loadProgress),
+    [morningPlan, userState.loadProgress]
+  );
+  const breakRows = useMemo(
+    () => adjustExercises(breakPlan.exercises, userState.loadProgress),
+    [breakPlan, userState.loadProgress]
+  );
+  const kettlebellRows = useMemo(
+    () => adjustExercises(kettlebellPlan.exercises, userState.loadProgress),
+    [kettlebellPlan, userState.loadProgress]
+  );
+  const tune = (list: Exercise[]) => adjustExercises(list, userState.loadProgress).map((row) => row.exercise);
+
   const handleCompleteWorkoutSession = (payload: {
     durationSeconds: number;
     exercisesCompleted: number;
     exercisesTotal: number;
     kcalBurned: number;
     backComfort: 'great' | 'normal' | 'tired';
+    effort?: 1 | 2 | 3 | 4 | 5;
+    pain?: boolean;
+    effortNote?: string;
+    exerciseEfforts?: { exerciseId: string; effort: 1 | 2 | 3 | 4 | 5 }[];
     walkingSteps?: number;
     distanceKm?: number;
   }) => {
@@ -278,9 +297,22 @@ export function App() {
       kcalBurned: payload.kcalBurned,
       weightKgAtSession: userState.profile.currentWeightKg,
       backComfort: payload.backComfort,
+      effort: payload.effort,
+      pain: payload.pain,
+      effortNote: payload.effortNote,
+      exerciseEfforts: payload.exerciseEfforts,
+      rpe: payload.effort ? payload.effort * 2 : undefined,
       walkingSteps: payload.walkingSteps,
       distanceKm: payload.distanceKm,
     };
+    const nextLoads = payload.effort
+      ? applySessionRatings(userState.loadProgress, activeSession.exercises, {
+          effort: payload.effort,
+          pain: Boolean(payload.pain),
+          at: newLog.timestamp,
+          perExercise: payload.exerciseEfforts,
+        })
+      : userState.loadProgress;
 
     setUserState((prev) => {
       const updatedSlots = prev.breakSlots.map((slot) => {
@@ -297,6 +329,7 @@ export function App() {
       return {
         ...prev,
         logs: [newLog, ...prev.logs],
+        loadProgress: nextLoads,
         breakSlots: updatedSlots,
         googleUser: prev.googleUser
           ? { ...prev.googleUser, lastSyncedAt: new Date().toISOString() }
@@ -610,6 +643,7 @@ export function App() {
             startWeightKg={userState.profile.startWeightKg}
             currentWeightKg={userState.profile.currentWeightKg}
             targetWeightKg={userState.profile.targetWeightKg}
+            loadProgress={userState.loadProgress}
           />
         )}
 
@@ -702,7 +736,7 @@ export function App() {
                         setActiveSession({
                           title: morningPlan.title,
                           category: 'morning',
-                          exercises: morningPlan.exercises,
+                          exercises: morningRows.map((row) => row.exercise),
                         })
                       }
                       className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 transition"
@@ -714,12 +748,13 @@ export function App() {
                 </div>
 
                 <div className="space-y-3">
-                  {morningPlan.exercises.map((ex, idx) => (
+                  {morningRows.map((row, idx) => (
                     <ExerciseDetailCard
-                      key={ex.id}
-                      exercise={ex}
+                      key={row.exercise.id}
+                      exercise={row.exercise}
+                      loadHint={row.direction ? { direction: row.direction, reason: row.reason, targetLabel: row.targetLabel } : undefined}
                       index={idx}
-                      isFavorite={userState.favoriteExerciseIds.includes(ex.id)}
+                      isFavorite={userState.favoriteExerciseIds.includes(row.exercise.id)}
                       onStartSingleExercise={(single) =>
                         setActiveSession({
                           title: single.titleRu,
@@ -858,6 +893,10 @@ export function App() {
                       const slotExercises = slot.exerciseIds
                         .map((id) => EXERCISES_DB.find((e) => e.id === id))
                         .filter((e): e is Exercise => Boolean(e));
+                      const slotRows = adjustExercises(
+                        slotExercises.length > 0 ? slotExercises : breakPlan.exercises,
+                        userState.loadProgress
+                      );
 
                       return (
                         <div
@@ -904,6 +943,12 @@ export function App() {
 
                           <h4 className="text-sm font-extrabold text-white mt-2">{slot.title}</h4>
                           <p className="text-xs text-slate-400 mt-0.5">{slot.focus}</p>
+                          {slotRows.some((row) => row.direction) && (
+                            <p className="text-xs text-amber-200 mt-1">
+                              {slotRows.find((row) => row.direction)?.direction === 'up' ? '↑' : slotRows.find((row) => row.direction)?.direction === 'down' ? '↓' : '='}{' '}
+                              {slotRows.find((row) => row.direction)?.targetLabel}. {slotRows.find((row) => row.direction)?.reason}
+                            </p>
+                          )}
 
                           <button
                             type="button"
@@ -911,7 +956,7 @@ export function App() {
                               setActiveSession({
                                 title: `${slot.timeLabel} — ${slot.title}`,
                                 category: 'breaks',
-                                exercises: slotExercises.length > 0 ? slotExercises : breakPlan.exercises,
+                                exercises: slotRows.map((row) => row.exercise),
                                 slotIdToComplete: slot.id,
                               })
                             }
@@ -935,7 +980,7 @@ export function App() {
                         setActiveSession({
                           title: breakPlan.title,
                           category: 'breaks',
-                          exercises: breakPlan.exercises,
+                          exercises: breakRows.map((row) => row.exercise),
                         })
                       }
                       className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-cyan-400 to-teal-500 text-slate-950 font-black text-xs shadow-lg"
@@ -947,12 +992,13 @@ export function App() {
                 </div>
 
                 <div className="space-y-3">
-                  {breakPlan.exercises.map((ex: Exercise, idx: number) => (
+                  {breakRows.map((row, idx) => (
                     <ExerciseDetailCard
-                      key={ex.id}
-                      exercise={ex}
+                      key={row.exercise.id}
+                      exercise={row.exercise}
+                      loadHint={row.direction ? { direction: row.direction, reason: row.reason, targetLabel: row.targetLabel } : undefined}
                       index={idx}
-                      isFavorite={userState.favoriteExerciseIds.includes(ex.id)}
+                      isFavorite={userState.favoriteExerciseIds.includes(row.exercise.id)}
                       onStartSingleExercise={(single) =>
                         setActiveSession({
                           title: single.titleRu,
@@ -982,7 +1028,7 @@ export function App() {
                   setActiveSession({
                     title: session.title,
                     category: session.category,
-                    exercises: session.exercises,
+                    exercises: tune(session.exercises),
                   });
                 }}
                 onShowBanner={(msg) => {
@@ -1101,7 +1147,7 @@ export function App() {
                         setActiveSession({
                           title: kettlebellPlan.title,
                           category: 'kettlebell',
-                          exercises: kettlebellPlan.exercises,
+                          exercises: kettlebellRows.map((row) => row.exercise),
                         })
                       }
                       className="shrink-0 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 hover:opacity-95 text-white font-black text-sm shadow-xl shadow-rose-500/25 transition"
@@ -1114,12 +1160,13 @@ export function App() {
 
                 {/* Exercises in Today's Kettlebell Complex */}
                 <div className="space-y-3">
-                  {kettlebellPlan.exercises.map((ex, idx) => (
+                  {kettlebellRows.map((row, idx) => (
                     <ExerciseDetailCard
-                      key={ex.id}
-                      exercise={ex}
+                      key={row.exercise.id}
+                      exercise={row.exercise}
+                      loadHint={row.direction ? { direction: row.direction, reason: row.reason, targetLabel: row.targetLabel } : undefined}
                       index={idx}
-                      isFavorite={userState.favoriteExerciseIds.includes(ex.id)}
+                      isFavorite={userState.favoriteExerciseIds.includes(row.exercise.id)}
                       onStartSingleExercise={(single) =>
                         setActiveSession({
                           title: single.titleRu,
@@ -1170,7 +1217,7 @@ export function App() {
               setActiveSession({
                 title: exercise.titleRu,
                 category: exercise.category,
-                exercises: [exercise],
+                exercises: tune([exercise]),
               });
               history.pushState(navState({ workout: true, view: 'library' }), '');
             }}
@@ -1181,7 +1228,7 @@ export function App() {
               setActiveSession({
                 title: complex.title,
                 category: 'kettlebell',
-                exercises: cplxExercises,
+                exercises: tune(cplxExercises),
               });
               history.pushState(navState({ workout: true }), '');
             }}
@@ -1335,7 +1382,7 @@ export function App() {
             setActiveSession({
               title: exercise.titleRu,
               category: exercise.category,
-              exercises: [exercise],
+              exercises: tune([exercise]),
             });
             history.replaceState(navState({ sheet: null, workout: true }), '');
           }}
@@ -1407,7 +1454,7 @@ export function App() {
                   setActiveSession({
                     title: breakPlan.title,
                     category: 'breaks',
-                    exercises: breakPlan.exercises,
+                    exercises: tune(breakPlan.exercises),
                   });
                 }}
                 className="w-full py-4 rounded-2xl bg-gradient-to-r from-cyan-400 to-teal-400 hover:from-cyan-300 hover:to-teal-300 text-slate-950 font-black text-sm shadow-xl shadow-cyan-500/25 flex items-center justify-center gap-2 cursor-pointer transition"

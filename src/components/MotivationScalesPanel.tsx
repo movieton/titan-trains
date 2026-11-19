@@ -1,5 +1,6 @@
 import React from 'react';
-import { CompletedSessionLog, DailyBreakSlot, ExerciseCategory } from '../types/fitness';
+import { CompletedSessionLog, DailyBreakSlot, ExerciseCategory, LoadRecord } from '../types/fitness';
+import { loadSummaries } from '../utils/loadProgression';
 import { Flame, CheckCircle2, XCircle, TrendingUp, Award, Calendar, Zap } from 'lucide-react';
 
 interface MotivationScalesPanelProps {
@@ -9,6 +10,7 @@ interface MotivationScalesPanelProps {
   startWeightKg: number;
   currentWeightKg: number;
   targetWeightKg: number;
+  loadProgress?: Record<string, LoadRecord>;
   onQuickLogComplete?: () => void;
 }
 
@@ -38,6 +40,7 @@ export const MotivationScalesPanel: React.FC<MotivationScalesPanelProps> = ({
   startWeightKg,
   currentWeightKg,
   targetWeightKg,
+  loadProgress,
 }) => {
   const last14 = getLast14DaysISO();
   const todayISO = last14[last14.length - 1].iso;
@@ -300,6 +303,8 @@ export const MotivationScalesPanel: React.FC<MotivationScalesPanelProps> = ({
           <span className="text-xs text-slate-400">Всего сожжено в разделе: {totalKcalCategory} ккал</span>
         </div>
 
+        <LoadHistory loads={loadProgress} logs={categoryLogs} />
+
         {categoryLogs.length === 0 ? (
           <div className="p-6 text-center rounded-2xl bg-slate-950/60 border border-slate-800/80 text-xs text-slate-400">
             Запустите первую тренировку во вкладке «Сегодня», чтобы открыть счёт побед!
@@ -331,7 +336,8 @@ export const MotivationScalesPanel: React.FC<MotivationScalesPanelProps> = ({
                     {log.kcalBurned} ккал
                   </div>
                   <div className="text-[10px] text-emerald-400">
-                    Спина: {log.backComfort === 'tired' ? 'Усталость' : 'Комфорт 100%'}
+                    {log.effort ? `Тяжесть ${log.effort}/5` : 'Без оценки'}
+                    {log.pain ? ' · боль' : ''}
                   </div>
                 </div>
               </div>
@@ -342,3 +348,38 @@ export const MotivationScalesPanel: React.FC<MotivationScalesPanelProps> = ({
     </div>
   );
 };
+
+function LoadHistory({
+  loads,
+  logs,
+}: {
+  loads?: Record<string, LoadRecord>;
+  logs: CompletedSessionLog[];
+}) {
+  const rows = loadSummaries(loads);
+  const rated = logs.filter((log) => log.effort).slice(0, 6);
+  if (rows.length === 0 && rated.length === 0) return null;
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3 space-y-2">
+      <h4 className="text-sm font-extrabold text-white">Нагрузка</h4>
+      {rows.map((row) => (
+        <div key={row.id} className="text-xs text-slate-200">
+          <div className="font-bold text-white">
+            {row.direction === 'up' ? '↑' : row.direction === 'down' ? '↓' : '='} {row.title}
+          </div>
+          <div className="text-slate-400">
+            Сейчас {row.targetLabel}. {row.reason}
+          </div>
+          <div className="text-amber-200">
+            {row.ratings.slice(-4).map((mark) => mark.effort).join(' · ') || 'нет оценок'}
+          </div>
+        </div>
+      ))}
+      {rated.length > 0 && (
+        <div className="text-xs text-slate-400">
+          Последние оценки сессий: {rated.map((log) => `${log.effort}${log.pain ? ' боль' : ''}`).join(', ')}
+        </div>
+      )}
+    </div>
+  );
+}

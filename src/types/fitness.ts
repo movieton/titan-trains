@@ -156,8 +156,31 @@ export interface CompletedSessionLog {
   weightKgAtSession?: number;
   rpe?: number; // 1-10 субъективная тяжесть
   backComfort?: 'great' | 'normal' | 'tired'; // Мониторинг состояния поясницы
+  /** 1 слишком легко … 5 слишком тяжело. */
+  effort?: 1 | 2 | 3 | 4 | 5;
+  pain?: boolean;
+  effortNote?: string;
+  exerciseEfforts?: { exerciseId: string; effort: 1 | 2 | 3 | 4 | 5 }[];
   walkingSteps?: number;
   distanceKm?: number;
+}
+
+export type LoadDirection = 'up' | 'same' | 'down';
+
+export interface EffortMark {
+  effort: 1 | 2 | 3 | 4 | 5;
+  pain: boolean;
+  at: string;
+}
+
+/** One ladder (an exercise or a pull-up chain) and where the user is on it. */
+export interface LoadRecord {
+  ladderId: string;
+  anchorId: string;
+  index: number;
+  ratings: EffortMark[];
+  direction: LoadDirection;
+  reason: string;
 }
 
 export interface DailyBreakSlot {
@@ -280,6 +303,8 @@ export interface UserState {
   breakSlots: DailyBreakSlot[];
   customMediaLinks: Record<string, string>; // exerciseId -> custom video/GIF/Instagram URL
   favoriteExerciseIds: string[];
+  /** Ladder position per exercise or progression chain. Missing on old saves. */
+  loadProgress?: Record<string, LoadRecord>;
   reminders: ReminderSettings;
   selectedDurationMorning: 10 | 15 | 20;
   selectedDurationBreak: 5 | 7 | 10;
