@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Exercise, getCleanQuickSteps } from '../types/fitness';
-import { BiomechanicalVisualizer } from './BiomechanicalVisualizer';
+import { BiomechanicalVisualizer, VERIFIED_EXERCISE_PHOTO_MAP } from './BiomechanicalVisualizer';
+import { exercisePhotoSrc } from '../utils/exercisePhotos';
 import {
   Play,
   ShieldCheck,
@@ -20,6 +21,8 @@ interface ExerciseDetailCardProps {
   onStartSingleExercise: (exercise: Exercise) => void;
   onToggleFavorite?: (exerciseId: string) => void;
   loadHint?: { direction: 'up' | 'same' | 'down'; reason: string; targetLabel: string };
+  /** Today’s plan: name, dose, hint and steps before the photo, with a small timer. */
+  layout?: 'full' | 'session';
 }
 
 const EQUIPMENT_LABELS: Record<string, string> = {
@@ -39,8 +42,89 @@ export const ExerciseDetailCard: React.FC<ExerciseDetailCardProps> = ({
   onStartSingleExercise,
   onToggleFavorite,
   loadHint,
+  layout = 'full',
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const steps = getCleanQuickSteps(exercise);
+
+  if (layout === 'session') {
+    const arrow = loadHint?.direction === 'up' ? '↑' : loadHint?.direction === 'down' ? '↓' : '=';
+    return (
+      <article className="rounded-3xl bg-slate-900/90 border border-slate-800 overflow-hidden">
+        <div className="px-4 pt-3.5 pb-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              {typeof index === 'number' && (
+                <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-extrabold">
+                  {index + 1}
+                </span>
+              )}
+              <span className="text-xs font-semibold text-slate-400 truncate">{exercise.subCategory}</span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {onToggleFavorite && (
+                <button
+                  type="button"
+                  onClick={() => onToggleFavorite(exercise.id)}
+                  aria-label={isFavorite ? 'Убрать из избранного' : 'В избранное'}
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center ${
+                    isFavorite ? 'bg-rose-500/20 border-rose-500/40 text-rose-300' : 'bg-slate-950 border-slate-800 text-slate-400'
+                  }`}
+                >
+                  <Heart className={`w-4 h-4 ${isFavorite ? 'fill-rose-400' : ''}`} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onStartSingleExercise(exercise)}
+                aria-label={`Таймер ${exercise.defaultSeconds} секунд`}
+                className="h-9 px-2.5 rounded-xl bg-amber-400 text-slate-950 font-extrabold text-xs inline-flex items-center gap-1"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                {exercise.defaultSeconds}с
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <h3 className="text-lg font-extrabold text-white leading-snug">{exercise.titleRu}</h3>
+            <p className="text-sm text-slate-400">{exercise.titleEn}</p>
+          </div>
+
+          {loadHint && (
+            <div className="rounded-2xl bg-slate-950 border border-slate-800 px-3.5 py-2.5">
+              <p className="text-sm font-bold text-amber-200">
+                {arrow} {loadHint.targetLabel}
+              </p>
+              <p className="text-sm text-slate-300 mt-0.5 leading-snug">{loadHint.reason}</p>
+            </div>
+          )}
+
+          <ol className="space-y-2">
+            {steps.map((step, i) => (
+              <li key={i} className="flex items-start gap-2.5 text-sm text-slate-200 leading-snug">
+                <span className="w-5 h-5 rounded-full bg-amber-500/15 text-amber-300 text-xs font-bold flex items-center justify-center shrink-0">
+                  {i + 1}
+                </span>
+                <span>{step}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+        {exercisePhotoSrc(exercise.imageUrl || VERIFIED_EXERCISE_PHOTO_MAP[exercise.id]) && (
+          <img
+            src={exercisePhotoSrc(exercise.imageUrl || VERIFIED_EXERCISE_PHOTO_MAP[exercise.id])}
+            alt=""
+            width={960}
+            height={536}
+            loading="lazy"
+            decoding="async"
+            className="w-full h-24 object-cover bg-slate-950"
+          />
+        )}
+      </article>
+    );
+  }
 
   return (
     <div className="rounded-3xl bg-slate-900/90 border border-slate-800/90 hover:border-slate-700/90 transition-all overflow-hidden shadow-lg">

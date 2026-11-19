@@ -1213,10 +1213,10 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
 
             {/* High-Contrast Sticky Pause Status Bar whenever paused in duration mode */}
             {!isRepsMode && !timer.isRunning && !isBottomSheetOpen && (
-              <div className="sticky top-[62px] z-20 px-4 py-2.5 rounded-2xl bg-rose-950/95 border-2 border-amber-400 shadow-2xl shadow-rose-500/30 flex items-center justify-between gap-2 animate-fadeIn">
-                <div className="flex items-center gap-2 text-amber-300 font-black text-xs sm:text-sm uppercase tracking-wide">
-                  <span className="text-base">⏸</span>
-                  <span>ТАЙМЕР НА ПАУЗЕ — ВРЕМЯ НЕ ИДЁТ</span>
+              <div className="sticky top-[62px] z-20 px-3.5 py-2.5 rounded-2xl bg-rose-950/95 border-2 border-amber-400 shadow-2xl shadow-rose-500/30 flex items-center justify-between gap-2 animate-fadeIn">
+                <div className="flex items-center gap-2 text-amber-300 font-black text-xs uppercase tracking-wide min-w-0">
+                  <span className="text-base shrink-0">⏸</span>
+                  <span className="leading-tight">Таймер на паузе</span>
                 </div>
                 <button
                   type="button"
@@ -1230,18 +1230,16 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
             )}
 
             {/* Top Bar: Full Title (no truncate) & Set Counter */}
-            <div className="p-3.5 sm:p-4 rounded-3xl bg-slate-900/90 border border-slate-800 flex items-start justify-between gap-3">
-              <div className="space-y-0.5 min-w-0 flex-1">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 block">
+            <div className="p-4 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-amber-400">
                   {currentExercise.category === 'kettlebell' ? 'Силовой сет' : 'Активная фаза'}
                 </span>
-                <h3 className="text-base sm:text-lg font-black text-white leading-snug">
-                  {currentExercise.titleRu}
-                </h3>
+                <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-black text-white">
+                  {currentSet}/{totalSetsForCurrent}
+                </span>
               </div>
-              <div className="px-3 py-1 rounded-xl bg-slate-800 border border-slate-700 text-xs font-black text-white shrink-0">
-                Сет {currentSet}/{totalSetsForCurrent}
-              </div>
+              <h3 className="text-lg font-black text-white leading-snug">{currentExercise.titleRu}</h3>
             </div>
 
             {/* Visualizer (Photo or Anatomical Map) */}
@@ -1264,7 +1262,7 @@ export const ActiveWorkoutModal: React.FC<ActiveWorkoutModalProps> = ({
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                     Цель на подход:
                   </span>
-                  <div className="text-3xl sm:text-4xl font-black text-white tracking-tight">
+                  <div className="text-2xl font-black text-white leading-tight break-words px-1">
                     {currentExercise.defaultReps}
                   </div>
                   {isBilateral && (

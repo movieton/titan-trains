@@ -160,14 +160,15 @@ export const BiomechanicalVisualizer: React.FC<BiomechanicalVisualizerProps> = (
               height={EXERCISE_PHOTO_HEIGHT}
               decoding="async"
               className={`w-full h-auto object-cover cursor-pointer hover:scale-[1.01] transition-transform duration-300 ${
-                compact ? 'max-h-[165px] sm:max-h-[210px]' : 'max-h-[230px] sm:max-h-[260px]'
+                compact ? 'max-h-[120px]' : 'max-h-[230px] sm:max-h-[260px]'
               }`}
               onClick={() => setIsZoomed(true)}
               onError={() => setPhotoFailed(true)}
               loading="lazy"
             />
 
-            {/* Phase 1 & Phase 2 Badges */}
+            {!compact && (
+              <>
             <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-950/85 backdrop-blur border border-slate-700/80 text-[10px] font-bold text-slate-200">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
               <span>ФАЗА 1: Старт / Натяжение</span>
@@ -176,9 +177,10 @@ export const BiomechanicalVisualizer: React.FC<BiomechanicalVisualizerProps> = (
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
               <span>ФАЗА 2: Пик / Выдох</span>
             </div>
+              </>
+            )}
 
-            {/* Bottom Floating Bar */}
-            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
+            <div className={`absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none ${compact ? 'hidden' : ''}`}>
               <span className="px-2.5 py-1 rounded-full bg-slate-950/85 border border-slate-800 text-[10px] text-slate-300 backdrop-blur">
                 🛡️ Защита нейтрали позвоночника
               </span>

@@ -752,6 +752,7 @@ export function App() {
                     <ExerciseDetailCard
                       key={row.exercise.id}
                       exercise={row.exercise}
+                      layout="session"
                       loadHint={row.direction ? { direction: row.direction, reason: row.reason, targetLabel: row.targetLabel } : undefined}
                       index={idx}
                       isFavorite={userState.favoriteExerciseIds.includes(row.exercise.id)}
@@ -996,6 +997,7 @@ export function App() {
                     <ExerciseDetailCard
                       key={row.exercise.id}
                       exercise={row.exercise}
+                      layout="session"
                       loadHint={row.direction ? { direction: row.direction, reason: row.reason, targetLabel: row.targetLabel } : undefined}
                       index={idx}
                       isFavorite={userState.favoriteExerciseIds.includes(row.exercise.id)}
@@ -1164,6 +1166,7 @@ export function App() {
                     <ExerciseDetailCard
                       key={row.exercise.id}
                       exercise={row.exercise}
+                      layout="session"
                       loadHint={row.direction ? { direction: row.direction, reason: row.reason, targetLabel: row.targetLabel } : undefined}
                       index={idx}
                       isFavorite={userState.favoriteExerciseIds.includes(row.exercise.id)}
